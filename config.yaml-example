@@ -1,0 +1,13 @@
+email:
+    host: smtp.host.com
+    port: 465
+    user: user@host.com
+    password: your_password
+
+server:
+    port: 9000
+
+tls:
+    enable: true
+    key: xx.key
+    cert: xx.pem
