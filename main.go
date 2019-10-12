@@ -16,6 +16,8 @@ var (
 	password string
 
 	// agent *emailagent.EmailAgent
+
+	authKey string
 )
 
 func init() {
@@ -32,9 +34,12 @@ func init() {
 	user = viper.GetString("email.user")
 	password = viper.GetString("email.password")
 
+	authKey = viper.GetString("auth.key")
+
 	log.Infof("host: %v", host)
 	log.Infof("port: %v", port)
 	log.Infof("user: %v", user)
+	log.Infof("authKey: %v", authKey)
 
 }
 
@@ -60,6 +65,7 @@ type emailContent struct {
 	To      string `json:"to"`
 	Subject string `json:"subject"`
 	Body    string `json:"body"`
+	AuthKey string `json:"auth_key"`
 }
 
 // sendEmail TODO
@@ -67,11 +73,20 @@ type emailContent struct {
 func sendEmail(c *gin.Context) {
 	var ec emailContent
 	err := c.ShouldBindJSON(&ec)
-	if err != nil || ec.To == "" || ec.Subject == "" || ec.Body == "" {
+	if err != nil || ec.To == "" || ec.Subject == "" || ec.Body == "" || ec.AuthKey == "" {
 		log.Error("Bad request")
 		c.JSON(400, gin.H{
 			"code": 1,
-			"msg":  `{"to":"receiver","subject":"your subject","body":"your content"} as request body`,
+			"msg":  `{"to":"receiver","subject":"your subject","body":"your content","auth_key":"someKey"} as request body`,
+		})
+		return
+	}
+	if ec.AuthKey != authKey {
+		msg := fmt.Sprintf("Invalid auth key")
+		log.Error(msg)
+		c.JSON(400, gin.H{
+			"code": 1,
+			"msg":  msg,
 		})
 		return
 	}

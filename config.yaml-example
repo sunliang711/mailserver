@@ -11,3 +11,6 @@ tls:
     enable: true
     key: xx.key
     cert: xx.pem
+
+auth:
+    key: secretKeyxxx
