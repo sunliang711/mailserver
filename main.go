@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/gin-gonic/gin"
+	"github.com/sirupsen/logrus"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
 	"github.com/sunliang711/emailagent"
@@ -53,9 +54,15 @@ func main() {
 	log.Infof("listen on %v", addr)
 
 	if viper.GetBool("tls.enable") {
-		srv.RunTLS(addr, viper.GetString("tls.cert"), viper.GetString("tls.key"))
+		err := srv.RunTLS(addr, viper.GetString("tls.cert"), viper.GetString("tls.key"))
+		if err != nil {
+			logrus.Error(err.Error())
+		}
 	} else {
-		srv.Run(addr)
+		err := srv.Run(addr)
+		if err != nil {
+			logrus.Error(err.Error())
+		}
 	}
 }
 
