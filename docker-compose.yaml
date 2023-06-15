@@ -3,7 +3,7 @@ services:
   mailserver:
     build: .
     ports:
-      - "8080:8080"
+      - "6070:8080"
     # environment:
     #   ALIDDNS_LOG_LEVEL: info
 
