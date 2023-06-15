@@ -6,4 +6,6 @@ services:
       - "6070:8080"
     # environment:
     #   ALIDDNS_LOG_LEVEL: info
+    volumes:
+      - ./config.yaml:/usr/local/bin/config.yaml
 
