@@ -5,7 +5,6 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/sirupsen/logrus"
-	log "github.com/sirupsen/logrus"
 	"github.com/spf13/viper"
 	"github.com/sunliang711/emailagent"
 )
@@ -37,10 +36,10 @@ func init() {
 
 	authKey = viper.GetString("auth.key")
 
-	log.Infof("host: %v", host)
-	log.Infof("port: %v", port)
-	log.Infof("user: %v", user)
-	log.Infof("authKey: %v", authKey)
+	logrus.Infof("host: %v", host)
+	logrus.Infof("port: %v", port)
+	logrus.Infof("user: %v", user)
+	logrus.Infof("authKey: %v", authKey)
 
 }
 
@@ -51,18 +50,17 @@ func main() {
 	srv.POST("/send", sendEmail)
 
 	addr := fmt.Sprintf(":%d", viper.GetInt("server.port"))
-	log.Infof("listen on %v", addr)
+	logrus.Infof("listen on %v", addr)
+
+	var err error
 
 	if viper.GetBool("tls.enable") {
-		err := srv.RunTLS(addr, viper.GetString("tls.cert"), viper.GetString("tls.key"))
-		if err != nil {
-			logrus.Error(err.Error())
-		}
+		err = srv.RunTLS(addr, viper.GetString("tls.cert"), viper.GetString("tls.key"))
 	} else {
-		err := srv.Run(addr)
-		if err != nil {
-			logrus.Error(err.Error())
-		}
+		err = srv.Run(addr)
+	}
+	if err != nil {
+		logrus.Error(err.Error())
 	}
 }
 
@@ -77,21 +75,21 @@ type emailContent struct {
 
 // sendEmail TODO
 // 2019/10/12 10:44:42
-func sendEmail(c *gin.Context) {
-	var ec emailContent
-	err := c.ShouldBindJSON(&ec)
-	if err != nil || ec.To == "" || ec.Subject == "" || ec.Body == "" || ec.AuthKey == "" {
-		log.Error("Bad request")
-		c.JSON(400, gin.H{
+func sendEmail(ctx *gin.Context) {
+	var req emailContent
+	err := ctx.ShouldBindJSON(&req)
+	if err != nil || req.To == "" || req.Subject == "" || req.Body == "" || req.AuthKey == "" {
+		logrus.Error("Bad request")
+		ctx.JSON(400, gin.H{
 			"code": 1,
 			"msg":  `{"to":"receiver","subject":"your subject","body":"your content","auth_key":"someKey"} as request body`,
 		})
 		return
 	}
-	if ec.AuthKey != authKey {
-		msg := fmt.Sprintf("Invalid auth key")
-		log.Error(msg)
-		c.JSON(400, gin.H{
+	if req.AuthKey != authKey {
+		msg := "Invalid auth key"
+		logrus.Error(msg)
+		ctx.JSON(400, gin.H{
 			"code": 1,
 			"msg":  msg,
 		})
@@ -100,25 +98,25 @@ func sendEmail(c *gin.Context) {
 	agent, err := emailagent.NewEmailAgent(host, port, user, password)
 	if err != nil {
 		msg := fmt.Sprintf("New email agent error: %v", err)
-		c.JSON(500, gin.H{
+		ctx.JSON(500, gin.H{
 			"code": 1,
 			"msg":  msg,
 		})
-		log.Error(msg)
+		logrus.Error(msg)
 		return
 	}
-	err = agent.SendEmail(ec.To, ec.Subject, ec.Body)
+	err = agent.SendEmail(req.To, req.Subject, req.Body)
 	defer agent.Close()
 	if err != nil {
-		c.JSON(500, gin.H{
+		ctx.JSON(500, gin.H{
 			"code": 1,
 			"msg":  "send email error",
 		})
 		return
 	}
-	c.JSON(200, gin.H{
+	ctx.JSON(200, gin.H{
 		"code": 0,
 		"msg":  "email sent",
 	})
-	log.Info("email sent.")
+	logrus.Info("email sent.")
 }
