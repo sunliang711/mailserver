@@ -3,9 +3,17 @@ services:
   mailserver:
     build: .
     ports:
-      - "6070:8080"
+      - "3005:3005"
     # environment:
     #   ALIDDNS_LOG_LEVEL: info
     volumes:
       - ./config.yaml:/usr/local/bin/config.yaml
+    networks:
+      - eagle
+
+networks:
+  eagle:
+    name: eagle
+    external: true
+
 
