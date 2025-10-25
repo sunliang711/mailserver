@@ -4,4 +4,3 @@
 /mailserver
 *.key
 *.pem
-config.yaml
