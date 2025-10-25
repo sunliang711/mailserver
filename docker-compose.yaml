@@ -3,7 +3,7 @@ services:
   mailserver:
     build: .
     ports:
-      - "3005:3005"
+      - "3000:3000"
     # environment:
     #   ALIDDNS_LOG_LEVEL: info
     volumes:
@@ -15,5 +15,3 @@ networks:
   eagle:
     name: eagle
     external: true
-
-

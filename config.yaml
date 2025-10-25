@@ -1,16 +1,16 @@
 email:
-    host: smtp.host.com
-    port: 465
-    user: user@host.com
-    password: your_password
+  host: smtp.host.com
+  port: 465
+  user: user@host.com
+  password: your_password
 
 server:
-    port: 3005
+  port: 3000
 
 tls:
-    enable: false
-    key: xx.key
-    cert: xx.pem
+  enable: false
+  key: xx.key
+  cert: xx.pem
 
 auth:
-    key: secretKeyxxx
+  key: secretKeyxxx

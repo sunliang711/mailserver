@@ -1,7 +1,10 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
+	"io"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/sirupsen/logrus"
@@ -43,10 +46,67 @@ func init() {
 
 }
 
+// 日志中间件
+func loggerMiddleware() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		start := time.Now()
+
+		// 读取请求体
+		var bodyBytes []byte
+		if c.Request.Body != nil {
+			bodyBytes, _ = io.ReadAll(c.Request.Body)
+		}
+		// 恢复请求体，以便后续处理
+		c.Request.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
+
+		// 打印请求信息
+		logrus.WithFields(logrus.Fields{
+			"method":       c.Request.Method,
+			"path":         c.Request.URL.Path,
+			"query":        c.Request.URL.RawQuery,
+			"request_body": string(bodyBytes),
+			"client_ip":    c.ClientIP(),
+			"user_agent":   c.Request.UserAgent(),
+		}).Info("Request received")
+
+		// 创建一个响应写入器来捕获响应
+		blw := &bodyLogWriter{body: bytes.NewBufferString(""), ResponseWriter: c.Writer}
+		c.Writer = blw
+
+		// 处理请求
+		c.Next()
+
+		// 计算处理时间
+		latency := time.Since(start)
+
+		// 打印响应信息
+		logrus.WithFields(logrus.Fields{
+			"status":        c.Writer.Status(),
+			"response_body": blw.body.String(),
+			"latency":       latency,
+		}).Info("Response sent")
+	}
+}
+
+// 自定义响应写入器
+type bodyLogWriter struct {
+	gin.ResponseWriter
+	body *bytes.Buffer
+}
+
+func (w bodyLogWriter) Write(b []byte) (int, error) {
+	w.body.Write(b)
+	return w.ResponseWriter.Write(b)
+}
+
 // 2019/10/12 10:40:30
 func main() {
 	gin.SetMode(gin.ReleaseMode)
 	srv := gin.New()
+
+	// 添加日志中间件
+	srv.Use(loggerMiddleware())
+
 	srv.POST("/send", sendEmail)
 
 	addr := fmt.Sprintf(":%d", viper.GetInt("server.port"))
