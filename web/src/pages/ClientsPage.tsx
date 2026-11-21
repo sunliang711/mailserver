@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react'
-import { Check, ChevronDown, ChevronRight, Copy, Eye, KeyRound, Plus, RefreshCw, Terminal, Trash2 } from 'lucide-react'
+import { Check, ChevronDown, ChevronRight, Copy, Eye, EyeOff, KeyRound, Plus, RefreshCw, Send, Terminal, Trash2 } from 'lucide-react'
 import { api, formatTime } from '../api'
 import { StatusBadge } from '../components/Badge'
 import { EmptyState, LoadingState } from '../components/Feedback'
@@ -19,6 +19,19 @@ interface ClientForm {
   expires_at: string
 }
 
+interface TestSendState {
+  client: Client
+  authKey: string
+  loadingKey: boolean
+  keyError: string
+  showKey: boolean
+  to: string
+  subject: string
+  body: string
+  sending: boolean
+  result: { ok: boolean; status: number; payload: unknown; msg: string } | null
+}
+
 export const ClientsPage: React.FC = () => {
   const toast = useToast()
   const { t, lang } = useI18n()
@@ -32,6 +45,7 @@ export const ClientsPage: React.FC = () => {
   const [revealingId, setRevealingId] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
   const [guideOpen, setGuideOpen] = useState(false)
+  const [testSend, setTestSend] = useState<TestSendState | null>(null)
   const [error, setError] = useState('')
 
   const load = async () => {
@@ -140,6 +154,78 @@ export const ClientsPage: React.FC = () => {
     }
   }
 
+  const openTestSend = async (c: Client) => {
+    setTestSend({
+      client: c,
+      authKey: '',
+      loadingKey: true,
+      keyError: '',
+      showKey: false,
+      to: '',
+      subject: t('clients.testDefaultSubject'),
+      body: t('clients.testDefaultBody', { name: c.name }),
+      sending: false,
+      result: null,
+    })
+    try {
+      const res = await api.revealClientSecrets(c.id)
+      setTestSend((prev) =>
+        prev && prev.client.id === c.id ? { ...prev, authKey: res.auth_key, loadingKey: false } : prev,
+      )
+    } catch (e: any) {
+      setTestSend((prev) =>
+        prev && prev.client.id === c.id
+          ? { ...prev, keyError: e.message || t('clients.loadError'), loadingKey: false }
+          : prev,
+      )
+    }
+  }
+
+  const handleTestSend = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!testSend || testSend.sending || testSend.loadingKey || !testSend.authKey) return
+    setTestSend((prev) => (prev ? { ...prev, sending: true, result: null } : prev))
+    try {
+      const res = await fetch(withBasePath('/send'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          to: testSend.to.trim(),
+          subject: testSend.subject.trim(),
+          body: testSend.body,
+          auth_key: testSend.authKey,
+        }),
+      })
+      const rawText = await res.text()
+      let payload: any = rawText
+      try {
+        payload = rawText ? JSON.parse(rawText) : {}
+      } catch {
+        // non-JSON response body
+      }
+      const msg =
+        typeof payload === 'object' && payload !== null && 'msg' in payload
+          ? String(payload.msg)
+          : rawText || res.statusText
+      const ok = res.ok && typeof payload === 'object' && payload !== null && payload.code === 0
+      setTestSend((prev) =>
+        prev ? { ...prev, sending: false, result: { ok, status: res.status, payload, msg } } : prev,
+      )
+      if (ok) {
+        toast.success(t('clients.testSuccess', { status: res.status }))
+      } else {
+        toast.error(t('clients.testFailed', { status: res.status, msg }))
+      }
+      await load()
+    } catch (err: any) {
+      const msg = err?.message || 'Network error'
+      setTestSend((prev) =>
+        prev ? { ...prev, sending: false, result: { ok: false, status: 0, payload: { error: msg }, msg } } : prev,
+      )
+      toast.error(t('clients.testFailed', { status: 0, msg }))
+    }
+  }
+
   const curlExample = `curl -X POST ${window.location.origin}${withBasePath('/send')} \\
   -H "Content-Type: application/json" \\
   -d '{
@@ -201,6 +287,13 @@ export const ClientsPage: React.FC = () => {
                 <td className="px-4 py-3"><StatusBadge value={c.enabled ? 'enabled' : 'disabled'} /></td>
                 <td className="px-4 py-3 text-right whitespace-nowrap">
                   <div className="inline-flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => openTestSend(c)}
+                      className="px-2.5 py-1 rounded-lg border border-indigo-200 dark:border-indigo-500/30 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-500/10 inline-flex items-center gap-1"
+                    >
+                      <Send className="w-3.5 h-3.5" /> {t('clients.testBtn')}
+                    </button>
                     <button
                       type="button"
                       disabled={revealingId === c.id}
@@ -324,6 +417,129 @@ export const ClientsPage: React.FC = () => {
               </button>
             </div>
           </div>
+        </Modal>
+      )}
+
+      {testSend && (
+        <Modal
+          title={t('clients.testModalTitle', { name: testSend.client.name })}
+          onClose={() => { if (!testSend.sending) setTestSend(null) }}
+          size="md"
+        >
+          <form onSubmit={handleTestSend} className="bg-white dark:bg-slate-900 rounded-2xl p-6 space-y-4 text-xs">
+            <div>
+              <h2 className="text-base font-semibold text-slate-900 dark:text-slate-100">
+                {t('clients.testModalTitle', { name: testSend.client.name })}
+              </h2>
+              <p className="text-slate-500 dark:text-slate-400 mt-1">{t('clients.testModalDesc')}</p>
+            </div>
+
+            {testSend.keyError && (
+              <div className="p-3 rounded-lg bg-rose-50 dark:bg-rose-500/15 text-rose-600 dark:text-rose-300">
+                {testSend.keyError}
+              </div>
+            )}
+
+            <div>
+              <label className="block text-slate-600 dark:text-slate-300 mb-1">{t('clients.testKey')}</label>
+              <div className="flex items-center gap-2">
+                <input
+                  type={testSend.showKey ? 'text' : 'password'}
+                  readOnly
+                  value={testSend.loadingKey ? t('clients.testLoadingKey') : testSend.authKey}
+                  className="flex-1 px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/80 font-mono text-xs text-slate-700 dark:text-slate-200"
+                />
+                <button
+                  type="button"
+                  disabled={testSend.loadingKey || !testSend.authKey}
+                  onClick={() => setTestSend((prev) => (prev ? { ...prev, showKey: !prev.showKey } : prev))}
+                  className="p-2 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 disabled:opacity-45"
+                  aria-label={t('clients.revealBtn')}
+                >
+                  {testSend.showKey ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                </button>
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-slate-600 dark:text-slate-300 mb-1">{t('clients.testTo')}</label>
+              <input
+                type="email"
+                required
+                placeholder="ops@example.com"
+                value={testSend.to}
+                onChange={(e) => setTestSend((prev) => (prev ? { ...prev, to: e.target.value } : prev))}
+                className="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800"
+              />
+            </div>
+
+            <div>
+              <label className="block text-slate-600 dark:text-slate-300 mb-1">{t('clients.testSubject')}</label>
+              <input
+                required
+                value={testSend.subject}
+                onChange={(e) => setTestSend((prev) => (prev ? { ...prev, subject: e.target.value } : prev))}
+                className="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800"
+              />
+            </div>
+
+            <div>
+              <label className="block text-slate-600 dark:text-slate-300 mb-1">{t('clients.testBody')}</label>
+              <textarea
+                rows={4}
+                required
+                value={testSend.body}
+                onChange={(e) => setTestSend((prev) => (prev ? { ...prev, body: e.target.value } : prev))}
+                className="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800"
+              />
+            </div>
+
+            {testSend.result && (
+              <div
+                className={`p-3 rounded-xl border space-y-1.5 ${
+                  testSend.result.ok
+                    ? 'bg-emerald-50 dark:bg-emerald-500/10 border-emerald-200 dark:border-emerald-500/30 text-emerald-700 dark:text-emerald-300'
+                    : 'bg-rose-50 dark:bg-rose-500/10 border-rose-200 dark:border-rose-500/30 text-rose-700 dark:text-rose-300'
+                }`}
+              >
+                <div className="font-medium flex items-center justify-between gap-2">
+                  <span>{t('clients.testResponse')}</span>
+                  <span className="font-mono">HTTP {testSend.result.status || 'ERR'}</span>
+                </div>
+                <pre className="text-[11px] font-mono whitespace-pre-wrap break-all opacity-90">
+                  {typeof testSend.result.payload === 'string'
+                    ? testSend.result.payload
+                    : JSON.stringify(testSend.result.payload, null, 2)}
+                </pre>
+              </div>
+            )}
+
+            <div className="flex justify-end gap-2 pt-2">
+              <button
+                type="button"
+                disabled={testSend.sending}
+                onClick={() => setTestSend(null)}
+                className="px-4 py-2 text-xs rounded-lg border border-slate-200 dark:border-slate-700 disabled:opacity-45"
+              >
+                {t('common.close')}
+              </button>
+              <button
+                type="submit"
+                disabled={
+                  testSend.sending ||
+                  testSend.loadingKey ||
+                  !testSend.authKey ||
+                  !testSend.to.trim() ||
+                  !testSend.subject.trim() ||
+                  !testSend.body
+                }
+                className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-medium rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white disabled:opacity-45"
+              >
+                <Send className="w-3.5 h-3.5" />
+                {testSend.sending ? t('clients.testSending') : t('clients.testSubmit')}
+              </button>
+            </div>
+          </form>
         </Modal>
       )}
     </div>

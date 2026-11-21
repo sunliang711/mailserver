@@ -170,9 +170,9 @@ export const Layout: React.FC<Props> = ({ active, onNavigate, admin, version = '
             <span className="font-medium text-slate-700 dark:text-slate-200 truncate">{t(current.labelKey)}</span>
           </div>
           <div className="flex items-center gap-3 shrink-0">
-            <div className="hidden md:flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
-              <Mail className="w-4 h-4 text-indigo-500 dark:text-indigo-400" />
-              <span>{t('app.console')}</span>
+            <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
+              <Mail className="hidden md:block w-4 h-4 text-indigo-500 dark:text-indigo-400" />
+              <span className="hidden md:inline">{t('app.console')}</span>
               <span className="font-mono text-[11px] px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">
                 {versionLabel}
               </span>

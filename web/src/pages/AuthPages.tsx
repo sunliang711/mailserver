@@ -67,18 +67,23 @@ export const AuthPage: React.FC<Props> = ({ mode, version = 'dev', onSuccess }) 
         </div>
 
         <div className="w-full max-w-md bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-xl shadow-slate-200/30 dark:shadow-black/40 p-6 sm:p-9">
-          <div className="flex items-center gap-3 mb-6">
-            <div className="w-10 h-10 rounded-xl bg-indigo-600 text-white flex items-center justify-center">
-              <Mail className="w-5 h-5" />
+          <div className="flex items-center justify-between gap-3 mb-6">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-indigo-600 text-white flex items-center justify-center shrink-0">
+                <Mail className="w-5 h-5" />
+              </div>
+              <div>
+                <h1 className="text-xl font-bold text-slate-900 dark:text-slate-100">
+                  {mode === 'setup' ? t('auth.setupTitle') : t('auth.loginTitle')}
+                </h1>
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  {mode === 'setup' ? t('auth.setupSubtitle') : t('auth.loginSubtitle')}
+                </p>
+              </div>
             </div>
-            <div>
-              <h1 className="text-xl font-bold text-slate-900 dark:text-slate-100">
-                {mode === 'setup' ? t('auth.setupTitle') : t('auth.loginTitle')}
-              </h1>
-              <p className="text-xs text-slate-500 dark:text-slate-400">
-                {mode === 'setup' ? t('auth.setupSubtitle') : t('auth.loginSubtitle')}
-              </p>
-            </div>
+            <span className="font-mono text-[11px] px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 shrink-0">
+              {versionLabel}
+            </span>
           </div>
 
           {error && (

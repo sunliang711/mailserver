@@ -43,6 +43,8 @@ jobs:
           context: .
           file: ./Dockerfile
           push: true
+          build-args: |
+            VERSION=${{ steps.version.outputs.VERSION }}
           tags: |
             sunliang711/mailserver:${{ steps.version.outputs.VERSION }}
             sunliang711/mailserver:latest
