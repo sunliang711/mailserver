@@ -445,9 +445,9 @@ export const ClientsPage: React.FC = () => {
           <Modal
             title={t('clients.testModalTitle', { name: testSend.client.name })}
             onClose={() => { if (!testSend.sending) setTestSend(null) }}
-            size="xl"
+            size="2xl"
           >
-            <form onSubmit={handleTestSend} className="bg-white dark:bg-slate-900 rounded-2xl p-6 space-y-4 text-xs">
+            <form onSubmit={handleTestSend} className="bg-white dark:bg-slate-900 rounded-2xl p-6 sm:p-7 space-y-5 text-xs">
               <div>
                 <h2 className="text-base font-semibold text-slate-900 dark:text-slate-100">
                   {t('clients.testModalTitle', { name: testSend.client.name })}
@@ -461,22 +461,22 @@ export const ClientsPage: React.FC = () => {
                 </div>
               )}
 
-              <div className="grid lg:grid-cols-2 gap-5 items-start">
-                <div className="space-y-3.5">
+              <div className="grid lg:grid-cols-[minmax(0,1fr)_minmax(0,1.25fr)] gap-6 items-start">
+                <div className="space-y-4 min-w-0">
                   <div>
-                    <label className="block text-slate-600 dark:text-slate-300 mb-1">{t('clients.testKey')}</label>
+                    <label className="block text-slate-600 dark:text-slate-300 mb-1.5">{t('clients.testKey')}</label>
                     <div className="flex items-center gap-2">
                       <input
                         type={testSend.showKey ? 'text' : 'password'}
                         readOnly
                         value={testSend.loadingKey ? t('clients.testLoadingKey') : testSend.authKey}
-                        className="flex-1 px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/80 font-mono text-xs text-slate-700 dark:text-slate-200"
+                        className="min-w-0 flex-1 px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/80 font-mono text-xs text-slate-700 dark:text-slate-200"
                       />
                       <button
                         type="button"
                         disabled={testSend.loadingKey || !testSend.authKey}
                         onClick={() => setTestSend((prev) => (prev ? { ...prev, showKey: !prev.showKey } : prev))}
-                        className="p-2 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 disabled:opacity-45"
+                        className="shrink-0 p-2 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 disabled:opacity-45"
                         aria-label={t('clients.revealBtn')}
                       >
                         {testSend.showKey ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
@@ -485,7 +485,7 @@ export const ClientsPage: React.FC = () => {
                   </div>
 
                   <div>
-                    <label className="block text-slate-600 dark:text-slate-300 mb-1">{t('clients.testTo')}</label>
+                    <label className="block text-slate-600 dark:text-slate-300 mb-1.5">{t('clients.testTo')}</label>
                     <input
                       type="email"
                       required
@@ -497,7 +497,7 @@ export const ClientsPage: React.FC = () => {
                   </div>
 
                   <div>
-                    <label className="block text-slate-600 dark:text-slate-300 mb-1">{t('clients.testSubject')}</label>
+                    <label className="block text-slate-600 dark:text-slate-300 mb-1.5">{t('clients.testSubject')}</label>
                     <input
                       required
                       value={testSend.subject}
@@ -507,7 +507,7 @@ export const ClientsPage: React.FC = () => {
                   </div>
 
                   <div>
-                    <label className="block text-slate-600 dark:text-slate-300 mb-1">{t('clients.testBody')}</label>
+                    <label className="block text-slate-600 dark:text-slate-300 mb-1.5">{t('clients.testBody')}</label>
                     <textarea
                       rows={4}
                       required
@@ -518,13 +518,16 @@ export const ClientsPage: React.FC = () => {
                   </div>
                 </div>
 
-                <div className="space-y-3">
-                  <div className="rounded-xl border border-slate-200 dark:border-slate-700/80 bg-slate-50/70 dark:bg-slate-800/40 p-3.5 space-y-2.5">
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="inline-flex items-center gap-1.5 font-medium text-slate-700 dark:text-slate-200">
-                        <Terminal className="w-3.5 h-3.5 text-indigo-500" />
-                        {t('clients.testCurlTitle')}
-                      </span>
+                <div className="space-y-4 min-w-0">
+                  <div className="rounded-xl border border-slate-200 dark:border-slate-700/80 bg-slate-50/70 dark:bg-slate-800/40 p-4 space-y-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <Terminal className="w-4 h-4 text-indigo-500 shrink-0" />
+                        <span className="font-medium text-slate-700 dark:text-slate-200 truncate">{t('clients.testCurlTitle')}</span>
+                        <span className="shrink-0 font-mono text-[10px] px-1.5 py-0.5 rounded bg-indigo-50 dark:bg-indigo-500/15 text-indigo-600 dark:text-indigo-300">
+                          POST /send
+                        </span>
+                      </div>
                       <button
                         type="button"
                         disabled={testSend.loadingKey}
@@ -534,21 +537,21 @@ export const ClientsPage: React.FC = () => {
                           toast.success(t('secret.copied'))
                           setTimeout(() => setCopiedCurl(false), 1500)
                         }}
-                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 disabled:opacity-45"
+                        className="shrink-0 whitespace-nowrap inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 disabled:opacity-45"
                       >
-                        {copiedCurl ? <Check className="w-3 h-3 text-emerald-500" /> : <Copy className="w-3 h-3" />}
+                        {copiedCurl ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
                         {copiedCurl ? t('common.copied') : t('clients.testCurlCopy')}
                       </button>
                     </div>
                     <p className="text-[11px] leading-relaxed text-slate-500 dark:text-slate-400">
                       {t('clients.testCurlDesc')}
                     </p>
-                    <pre className="p-3 rounded-lg bg-slate-950 text-slate-100 font-mono text-[11px] leading-relaxed overflow-x-auto max-h-64 whitespace-pre-wrap break-all">{previewCurl}</pre>
+                    <pre className="p-3.5 rounded-lg bg-slate-950 text-slate-100 font-mono text-[11px] leading-relaxed overflow-x-auto max-h-64 whitespace-pre">{previewCurl}</pre>
                   </div>
 
                   {testSend.result && (
                     <div
-                      className={`p-3 rounded-xl border space-y-1.5 ${
+                      className={`p-3.5 rounded-xl border space-y-1.5 ${
                         testSend.result.ok
                           ? 'bg-emerald-50 dark:bg-emerald-500/10 border-emerald-200 dark:border-emerald-500/30 text-emerald-700 dark:text-emerald-300'
                           : 'bg-rose-50 dark:bg-rose-500/10 border-rose-200 dark:border-rose-500/30 text-rose-700 dark:text-rose-300'
