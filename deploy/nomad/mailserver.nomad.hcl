@@ -23,7 +23,8 @@ job "mailserver" {
     network {
       port "http" {
         static = 8100
-        to     = 8100
+        host_network = "loopback"
+        to     = 3000
       }
     }
 
@@ -63,10 +64,11 @@ job "mailserver" {
       env {
         # --- 基础服务与持久化路径 ---
         MAILSERVER_CONFIG   = "/app/config.yaml"
-        MAILSERVER_PORT     = "8100"
+        MAILSERVER_PORT     = "3000"
         MAILSERVER_DATA_DIR = "/data"
         # 对外访问基准地址（用于同源校验；局域网/反代部署请改为实际访问地址）
-        MAILSERVER_PUBLIC_BASE_URL = "http://localhost:8100"
+        MAILSERVER_PUBLIC_BASE_URL = "https://www.example.com/api/mail"
+        MAILSERVER_BASE_PATH="/api/mail"
         # 可选：固定 32 字节加密主密钥（64 位十六进制或 Base64）；不设置时自动生成并持久化到 /data/master.key
         # MAILSERVER_MASTER_KEY    = ""
         # 可选：子路径反代前缀（如挂载到 https://www.example.com/api/mail 时填写 "/api/mail"）
@@ -101,8 +103,8 @@ job "mailserver" {
       }
 
       resources {
-        cpu    = 200
-        memory = 256
+        cpu    = 100
+        memory = 100
       }
     }
   }
