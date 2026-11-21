@@ -1,6 +1,6 @@
 variable "image" {
   type    = string
-  default = "sunliang711/mailserver:latest"
+  default = "sunliang711/mailserver:v1.1.0"
 }
 
 job "mailserver" {
@@ -22,8 +22,8 @@ job "mailserver" {
 
     network {
       port "http" {
-        static = 3000
-        to     = 3000
+        static = 8100
+        to     = 8100
       }
     }
 
@@ -63,14 +63,14 @@ job "mailserver" {
       env {
         # --- 基础服务与持久化路径 ---
         MAILSERVER_CONFIG   = "/app/config.yaml"
-        MAILSERVER_PORT     = "3000"
+        MAILSERVER_PORT     = "8100"
         MAILSERVER_DATA_DIR = "/data"
         # 对外访问基准地址（用于同源校验；局域网/反代部署请改为实际访问地址）
-        MAILSERVER_PUBLIC_BASE_URL = "http://localhost:3000"
+        MAILSERVER_PUBLIC_BASE_URL = "http://localhost:8100"
         # 可选：固定 32 字节加密主密钥（64 位十六进制或 Base64）；不设置时自动生成并持久化到 /data/master.key
         # MAILSERVER_MASTER_KEY    = ""
         # 可选：额外允许跨域的 Origin 白名单（多个用英文逗号分隔）
-        # MAILSERVER_CORS_ORIGINS  = "http://192.168.1.10:3000"
+        # MAILSERVER_CORS_ORIGINS  = "http://192.168.1.10:8100"
 
         # --- 可选：HTTPS / TLS 配置（与 config.yaml 共同作为启动引导配置）---
         # MAILSERVER_TLS_ENABLE    = "true"
@@ -81,6 +81,7 @@ job "mailserver" {
         # 与管理员账号均统一持久化在 SQLite 数据库，请在 Web 管理端中配置（修改后即时生效）。
       }
 
+      # host volume: mailserver 需要自己创建，可以使用 nomad-manager host-volume add mailserver --create来创建
       volume_mount {
         volume      = "mailserver"
         destination = "/data"
