@@ -282,7 +282,7 @@ func TestAdminAndSafeKeepBackupE2E(t *testing.T) {
 		t.Fatalf("unexpected bundle counts: %+v", insp.Counts)
 	}
 
-	// 4. Verify embedded Web UI HTML is served on GET /
+	// 4. Verify embedded Web UI HTML is served on GET / and respects X-Forwarded-Prefix & BasePath
 	spaRes, err := http.Get(ts.URL + "/")
 	if err != nil {
 		t.Fatal(err)
@@ -291,5 +291,30 @@ func TestAdminAndSafeKeepBackupE2E(t *testing.T) {
 	_ = spaRes.Body.Close()
 	if spaRes.StatusCode != http.StatusOK || !strings.Contains(string(spaBody), "<div id=\"root\"></div>") {
 		t.Fatalf("expected embedded SPA HTML on /, status=%d", spaRes.StatusCode)
+	}
+
+	xfpReq, _ := http.NewRequest(http.MethodGet, ts.URL+"/", nil)
+	xfpReq.Header.Set("X-Forwarded-Prefix", "/api/mail")
+	xfpRes, err := httpClient.Do(xfpReq)
+	if err != nil {
+		t.Fatal(err)
+	}
+	xfpBody, _ := io.ReadAll(xfpRes.Body)
+	_ = xfpRes.Body.Close()
+	if !strings.Contains(string(xfpBody), `<base href="/api/mail/" />`) || !strings.Contains(string(xfpBody), `window.__MAILSERVER_BASE__ = "/api/mail";`) {
+		t.Fatalf("expected injected /api/mail base tag and script, got:\n%s", string(xfpBody))
+	}
+
+	// Verify WrapHandler strips configured BasePath when upstream proxy forwards unstripped paths
+	cfg.Server.BasePath = "/api/mail"
+	wrappedTS := httptest.NewServer(adminSrv.WrapHandler(engine))
+	defer wrappedTS.Close()
+	subHealth, err := http.Get(wrappedTS.URL + "/api/mail/healthz")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = subHealth.Body.Close()
+	if subHealth.StatusCode != http.StatusOK {
+		t.Fatalf("wrapped /api/mail/healthz status = %d, want 200", subHealth.StatusCode)
 	}
 }

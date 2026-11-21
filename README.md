@@ -38,6 +38,7 @@ tls:
 - `MAILSERVER_TLS_CERT`：TLS 证书文件路径
 - `MAILSERVER_TLS_KEY`：TLS 私钥文件路径
 - `MAILSERVER_CORS_ORIGINS`：额外允许的跨域 Origin（逗号分隔）
+- `MAILSERVER_BASE_PATH`：反向代理子路径前缀（如挂载在 `/api/mail` 时设为 `/api/mail`，也可通过反代请求头 `X-Forwarded-Prefix` 传递）
 - `MAILSERVER_PUBLIC_BASE_URL`：对外访问地址默认值
 
 > 注意：`auth_key` 不在 `config.yaml` 中配置，请在启动后通过 Web UI 的「客户端与密钥」页面创建。

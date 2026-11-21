@@ -39,6 +39,7 @@ type ServerConfig struct {
 	Port               int      `yaml:"port"`
 	DataDir            string   `yaml:"data_dir"`
 	MasterKey          string   `yaml:"master_key"`
+	BasePath           string   `yaml:"base_path"`
 	CORSAllowedOrigins []string `yaml:"cors_allowed_origins"`
 }
 
@@ -122,6 +123,9 @@ func Load(explicitConfigPath string, cliOverrides map[string]string) (*Config, e
 			if strings.TrimSpace(fileCfg.Server.MasterKey) != "" {
 				cfg.Server.MasterKey = strings.TrimSpace(fileCfg.Server.MasterKey)
 			}
+			if strings.TrimSpace(fileCfg.Server.BasePath) != "" {
+				cfg.Server.BasePath = NormalizeBasePath(fileCfg.Server.BasePath)
+			}
 			if len(fileCfg.Server.CORSAllowedOrigins) > 0 {
 				cfg.CORSAllowedOrigins = append(cfg.CORSAllowedOrigins, fileCfg.Server.CORSAllowedOrigins...)
 			}
@@ -143,6 +147,9 @@ func Load(explicitConfigPath string, cliOverrides map[string]string) (*Config, e
 	}
 	if v, ok := os.LookupEnv("MAILSERVER_MASTER_KEY"); ok && strings.TrimSpace(v) != "" {
 		cfg.Server.MasterKey = strings.TrimSpace(v)
+	}
+	if v, ok := os.LookupEnv("MAILSERVER_BASE_PATH"); ok {
+		cfg.Server.BasePath = NormalizeBasePath(v)
 	}
 	if v, ok := os.LookupEnv("MAILSERVER_CORS_ORIGINS"); ok {
 		cfg.CORSAllowedOrigins = parseCSV(v)
@@ -170,6 +177,9 @@ func Load(explicitConfigPath string, cliOverrides map[string]string) (*Config, e
 	}
 	if v, ok := cliOverrides["master-key"]; ok && strings.TrimSpace(v) != "" {
 		cfg.Server.MasterKey = strings.TrimSpace(v)
+	}
+	if v, ok := cliOverrides["base-path"]; ok {
+		cfg.Server.BasePath = NormalizeBasePath(v)
 	}
 
 	cfg.Defaults = DefaultSystemSettings(cfg.Server.Port, cfg.TLS.Enable)
@@ -245,4 +255,33 @@ func parseCSV(s string) []string {
 func parseBool(s string) bool {
 	v := strings.TrimSpace(strings.ToLower(s))
 	return v == "true" || v == "1" || v == "yes" || v == "on"
+}
+
+// NormalizeBasePath normalizes a reverse-proxy subpath prefix (e.g. "/api/mail/" -> "/api/mail", "/" -> "").
+// Any unsafe characters are rejected by returning "".
+func NormalizeBasePath(s string) string {
+	trimmed := strings.TrimSpace(s)
+	trimmed = strings.TrimRight(trimmed, "/")
+	if trimmed == "" || trimmed == "/" {
+		return ""
+	}
+	if !strings.HasPrefix(trimmed, "/") {
+		trimmed = "/" + trimmed
+	}
+	for _, r := range trimmed {
+		valid := (r >= 'a' && r <= 'z') ||
+			(r >= 'A' && r <= 'Z') ||
+			(r >= '0' && r <= '9') ||
+			r == '/' || r == '-' || r == '_' || r == '.' || r == '~'
+		if !valid {
+			return ""
+		}
+	}
+	if strings.Contains(trimmed, "..") {
+		return ""
+	}
+	for strings.Contains(trimmed, "//") {
+		trimmed = strings.ReplaceAll(trimmed, "//", "/")
+	}
+	return strings.TrimRight(trimmed, "/")
 }

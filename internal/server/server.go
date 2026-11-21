@@ -5,8 +5,10 @@ import (
 	"crypto/sha256"
 	"crypto/tls"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"html"
 	"io/fs"
 	"net"
 	"net/http"
@@ -161,11 +163,40 @@ func RegisterRoutes(engine *gin.Engine, mailHandler *handler.MailHandler, s *Adm
 	engine.NoRoute(s.handleSPA)
 }
 
-func NewHTTPServer(cfg *config.Config, engine *gin.Engine) *http.Server {
+func NewHTTPServer(cfg *config.Config, adminSrv *AdminServer, engine *gin.Engine) *http.Server {
 	return &http.Server{
 		Addr:    fmt.Sprintf(":%d", cfg.Server.Port),
-		Handler: engine,
+		Handler: adminSrv.WrapHandler(engine),
 	}
+}
+
+// WrapHandler strips configured server.base_path if an upstream proxy forwards requests without stripping the prefix.
+func (s *AdminServer) WrapHandler(next http.Handler) http.Handler {
+	basePath := config.NormalizeBasePath(s.cfg.Server.BasePath)
+	if basePath == "" {
+		return next
+	}
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		p := r.URL.Path
+		if p == basePath || strings.HasPrefix(p, basePath+"/") {
+			trimmed := strings.TrimPrefix(p, basePath)
+			if trimmed == "" {
+				trimmed = "/"
+			}
+			r2 := r.Clone(r.Context())
+			r2.URL.Path = trimmed
+			if r2.URL.RawPath != "" {
+				if rawTrimmed := strings.TrimPrefix(r2.URL.RawPath, basePath); rawTrimmed != "" {
+					r2.URL.RawPath = rawTrimmed
+				} else {
+					r2.URL.RawPath = "/"
+				}
+			}
+			next.ServeHTTP(w, r2)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 func RegisterLifecycle(
@@ -367,7 +398,22 @@ func writeError(c *gin.Context, status int, code, msg string) {
 	})
 }
 
+func (s *AdminServer) effectiveBasePath(r *http.Request) string {
+	if xfp := strings.TrimSpace(r.Header.Get("X-Forwarded-Prefix")); xfp != "" {
+		if first := strings.TrimSpace(strings.Split(xfp, ",")[0]); first != "" {
+			if norm := config.NormalizeBasePath(first); norm != "" {
+				return norm
+			}
+		}
+	}
+	return config.NormalizeBasePath(s.cfg.Server.BasePath)
+}
+
 func (s *AdminServer) handleSPA(c *gin.Context) {
+	if c.Request.Method != http.MethodGet && c.Request.Method != http.MethodHead {
+		writeError(c, http.StatusNotFound, "not_found", "endpoint not found")
+		return
+	}
 	if strings.HasPrefix(c.Request.URL.Path, "/admin/api/") || strings.HasPrefix(c.Request.URL.Path, "/api/") {
 		writeError(c, http.StatusNotFound, "not_found", "endpoint not found")
 		return
@@ -378,16 +424,14 @@ func (s *AdminServer) handleSPA(c *gin.Context) {
 	}
 
 	reqPath := strings.TrimPrefix(c.Request.URL.Path, "/")
-	if reqPath == "" {
-		reqPath = "index.html"
-	}
-
-	if f, err := s.webFS.Open(reqPath); err == nil {
-		stat, statErr := f.Stat()
-		_ = f.Close()
-		if statErr == nil && !stat.IsDir() {
-			http.FileServer(http.FS(s.webFS)).ServeHTTP(c.Writer, c.Request)
-			return
+	if reqPath != "" && reqPath != "index.html" {
+		if f, err := s.webFS.Open(reqPath); err == nil {
+			stat, statErr := f.Stat()
+			_ = f.Close()
+			if statErr == nil && !stat.IsDir() {
+				http.FileServer(http.FS(s.webFS)).ServeHTTP(c.Writer, c.Request)
+				return
+			}
 		}
 	}
 
@@ -396,5 +440,13 @@ func (s *AdminServer) handleSPA(c *gin.Context) {
 		writeError(c, http.StatusNotFound, "not_found", "index.html missing")
 		return
 	}
-	c.Data(http.StatusOK, "text/html; charset=utf-8", indexBytes)
+
+	basePath := s.effectiveBasePath(c.Request)
+	baseHref := basePath + "/"
+	baseJSON, _ := json.Marshal(basePath)
+	injection := fmt.Sprintf("<head>\n    <base href=%q />\n    <script>window.__MAILSERVER_BASE__ = %s;</script>", html.EscapeString(baseHref), string(baseJSON))
+	rendered := strings.Replace(string(indexBytes), "<head>", injection, 1)
+
+	c.Header("Cache-Control", "no-cache")
+	c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(rendered))
 }

@@ -46,7 +46,7 @@ func TestEnsureMasterKey(t *testing.T) {
 	if err != nil {
 		t.Fatalf("EnsureMasterKey 1: %v", err)
 	}
-	if len(k1) != 32 {
+	if k1 == nil || len(k1) != 32 {
 		t.Fatalf("key len = %d, want 32", len(k1))
 	}
 
@@ -56,5 +56,26 @@ func TestEnsureMasterKey(t *testing.T) {
 	}
 	if string(k1) != string(k2) {
 		t.Fatal("reloaded master key does not match generated key")
+	}
+}
+
+func TestNormalizeBasePath(t *testing.T) {
+	cases := []struct {
+		in   string
+		want string
+	}{
+		{"", ""},
+		{"/", ""},
+		{"/api/mail", "/api/mail"},
+		{"/api/mail/", "/api/mail"},
+		{"api/mail/", "/api/mail"},
+		{"//api//mail///", "/api/mail"},
+		{`"/bad<script>`, ""},
+		{"/bad/../path", ""},
+	}
+	for _, tc := range cases {
+		if got := NormalizeBasePath(tc.in); got != tc.want {
+			t.Fatalf("NormalizeBasePath(%q) = %q, want %q", tc.in, got, tc.want)
+		}
 	}
 }

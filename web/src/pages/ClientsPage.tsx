@@ -7,6 +7,7 @@ import { Modal } from '../components/Modal'
 import { useToast } from '../components/Toast'
 import { useI18n } from '../contexts/I18nContext'
 import { copyText } from '../utils/clipboard'
+import { withBasePath } from '../utils/basePath'
 import type { Client } from '../types'
 
 interface ClientForm {
@@ -139,7 +140,7 @@ export const ClientsPage: React.FC = () => {
     }
   }
 
-  const curlExample = `curl -X POST ${window.location.origin}/send \\
+  const curlExample = `curl -X POST ${window.location.origin}${withBasePath('/send')} \\
   -H "Content-Type: application/json" \\
   -d '{
     "to": "receiver@example.com",

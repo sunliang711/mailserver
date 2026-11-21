@@ -69,6 +69,8 @@ job "mailserver" {
         MAILSERVER_PUBLIC_BASE_URL = "http://localhost:8100"
         # 可选：固定 32 字节加密主密钥（64 位十六进制或 Base64）；不设置时自动生成并持久化到 /data/master.key
         # MAILSERVER_MASTER_KEY    = ""
+        # 可选：子路径反代前缀（如挂载到 https://www.example.com/api/mail 时填写 "/api/mail"）
+        # MAILSERVER_BASE_PATH     = "/api/mail"
         # 可选：额外允许跨域的 Origin 白名单（多个用英文逗号分隔）
         # MAILSERVER_CORS_ORIGINS  = "http://192.168.1.10:8100"
 

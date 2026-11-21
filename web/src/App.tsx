@@ -13,9 +13,14 @@ import { MailLogsPage } from './pages/MailLogsPage'
 import { MigrationPage } from './pages/MigrationPage'
 import { SettingsPage } from './pages/SettingsPage'
 import type { Admin } from './types'
+import { getBasePath, withBasePath } from './utils/basePath'
 
 function initialTab(): NavTab {
-  const p = window.location.pathname
+  const base = getBasePath()
+  let p = window.location.pathname
+  if (base && (p === base || p.startsWith(`${base}/`))) {
+    p = p.slice(base.length) || '/'
+  }
   if (p.startsWith('/mail-logs')) return 'mail-logs'
   if (p.startsWith('/clients')) return 'clients'
   if (p.startsWith('/cron')) return 'cron'
@@ -64,7 +69,7 @@ export function App() {
     if (next === tab) return
     setTab(next)
     const path = next === 'dashboard' ? '/' : `/${next}`
-    window.history.pushState({}, '', path)
+    window.history.pushState({}, '', withBasePath(path))
     window.scrollTo({ top: 0 })
   }
 

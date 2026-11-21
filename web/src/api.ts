@@ -1,4 +1,5 @@
 import { getCurrentLang, translate } from './contexts/I18nContext'
+import { withBasePath } from './utils/basePath'
 import type {
   Admin,
   AuditLog,
@@ -13,7 +14,9 @@ import type {
   SystemSettings,
 } from './types'
 
-const BASE = '/admin/api/v1'
+function apiBase(): string {
+  return withBasePath('/admin/api/v1')
+}
 
 export class ApiError extends Error {
   status: number
@@ -28,7 +31,7 @@ export class ApiError extends Error {
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const isForm = init.body instanceof FormData
   const headers: Record<string, string> = isForm ? {} : { 'Content-Type': 'application/json' }
-  const res = await fetch(`${BASE}${path}`, {
+  const res = await fetch(`${apiBase()}${path}`, {
     ...init,
     credentials: 'include',
     headers: { ...headers, ...(init.headers as Record<string, string> | undefined) },
@@ -70,7 +73,7 @@ export const api = {
   getMailLog: (id: string) => request<MailLog>(`/mail-logs/${encodeURIComponent(id)}`),
   exportMailLogsUrl: (params: Record<string, string>, format: 'csv' | 'json') => {
     const qs = new URLSearchParams({ ...params, format }).toString()
-    return `${BASE}/mail-logs/export?${qs}`
+    return `${apiBase()}/mail-logs/export?${qs}`
   },
   testSendMail: (payload: { to: string; subject: string; body: string }) =>
     request<{ status: string }>('/mail/test-send', { method: 'POST', body: JSON.stringify(payload) }),
@@ -125,7 +128,7 @@ export const api = {
   },
   exportAuditUrl: (params: Record<string, string>, format: 'csv' | 'json') => {
     const qs = new URLSearchParams({ ...params, format }).toString()
-    return `${BASE}/audit-logs/export?${qs}`
+    return `${apiBase()}/audit-logs/export?${qs}`
   },
 
   getSettings: () => request<SystemSettings>('/settings'),
@@ -163,7 +166,7 @@ export const api = {
     include_audit_logs: boolean
     passphrase: string
   }) => {
-    const res = await fetch(`${BASE}/migration/export`, {
+    const res = await fetch(`${apiBase()}/migration/export`, {
       method: 'POST',
       credentials: 'include',
       headers: { 'Content-Type': 'application/json' },

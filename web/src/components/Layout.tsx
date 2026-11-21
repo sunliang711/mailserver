@@ -16,6 +16,7 @@ import { useI18n } from '../contexts/I18nContext'
 import type { TranslationKey } from '../i18n/zh'
 import { PreferenceControls } from './PreferenceControls'
 import type { Admin } from '../types'
+import { withBasePath } from '../utils/basePath'
 
 export type NavTab = 'dashboard' | 'mail-logs' | 'clients' | 'cron' | 'audit' | 'migration' | 'settings'
 
@@ -115,7 +116,7 @@ export const Layout: React.FC<Props> = ({ active, onNavigate, admin, version = '
                   </div>
                 )}
                 <a
-                  href={item.id === 'dashboard' ? '/' : `/${item.id}`}
+                  href={withBasePath(item.id === 'dashboard' ? '/' : `/${item.id}`)}
                   aria-current={isActive ? 'page' : undefined}
                   onClick={(event) => {
                     if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
