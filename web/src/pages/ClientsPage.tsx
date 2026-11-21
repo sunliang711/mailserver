@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react'
-import { Check, ChevronDown, ChevronRight, Copy, Eye, EyeOff, KeyRound, Plus, RefreshCw, Send, Terminal, Trash2 } from 'lucide-react'
+import { Check, Copy, Eye, EyeOff, KeyRound, Plus, RefreshCw, Send, Terminal, Trash2 } from 'lucide-react'
 import { api, formatTime } from '../api'
 import { StatusBadge } from '../components/Badge'
 import { EmptyState, LoadingState } from '../components/Feedback'
@@ -32,6 +32,28 @@ interface TestSendState {
   result: { ok: boolean; status: number; payload: unknown; msg: string } | null
 }
 
+const shellSingleQuote = (value: string) => `'${value.replace(/'/g, `'\\''`)}'`
+
+const buildSendCurlCommand = (params: {
+  url: string
+  to: string
+  subject: string
+  body: string
+  authKey: string
+}) => {
+  const payload = JSON.stringify(
+    {
+      to: params.to,
+      subject: params.subject,
+      body: params.body,
+      auth_key: params.authKey,
+    },
+    null,
+    2,
+  )
+  return `curl -X POST ${params.url} \\\n  -H "Content-Type: application/json" \\\n  -d ${shellSingleQuote(payload)}`
+}
+
 export const ClientsPage: React.FC = () => {
   const toast = useToast()
   const { t, lang } = useI18n()
@@ -44,7 +66,7 @@ export const ClientsPage: React.FC = () => {
   const [revealedKey, setRevealedKey] = useState<{ key: string; name: string; isNew?: boolean } | null>(null)
   const [revealingId, setRevealingId] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
-  const [guideOpen, setGuideOpen] = useState(false)
+  const [copiedCurl, setCopiedCurl] = useState(false)
   const [testSend, setTestSend] = useState<TestSendState | null>(null)
   const [error, setError] = useState('')
 
@@ -155,6 +177,7 @@ export const ClientsPage: React.FC = () => {
   }
 
   const openTestSend = async (c: Client) => {
+    setCopiedCurl(false)
     setTestSend({
       client: c,
       authKey: '',
@@ -225,15 +248,6 @@ export const ClientsPage: React.FC = () => {
       toast.error(t('clients.testFailed', { status: 0, msg }))
     }
   }
-
-  const curlExample = `curl -X POST ${window.location.origin}${withBasePath('/send')} \\
-  -H "Content-Type: application/json" \\
-  -d '{
-    "to": "receiver@example.com",
-    "subject": "Test Mail",
-    "body": "Hello from mailserver",
-    "auth_key": "ms_your_auth_key"
-  }'`
 
   return (
     <div className="space-y-5">
@@ -332,23 +346,6 @@ export const ClientsPage: React.FC = () => {
         </table>
       </div>
 
-      <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden">
-        <button
-          type="button"
-          onClick={() => setGuideOpen(!guideOpen)}
-          className="w-full px-5 py-3.5 flex items-center justify-between text-xs font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800/50"
-        >
-          <span className="inline-flex items-center gap-2"><Terminal className="w-4 h-4 text-indigo-500" />{t('clients.guideTitle')}</span>
-          {guideOpen ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
-        </button>
-        {guideOpen && (
-          <div className="px-5 pb-5 space-y-3 border-t border-slate-100 dark:border-slate-800 pt-3">
-            <p className="text-xs text-slate-500 dark:text-slate-400">{t('clients.guideDesc')}</p>
-            <pre className="p-3.5 rounded-xl bg-slate-950 text-slate-100 font-mono text-xs overflow-x-auto">{curlExample}</pre>
-          </div>
-        )}
-      </div>
-
       {modalOpen && form && (
         <Modal title={form.id ? t('clients.modalEditTitle', { name: form.name }) : t('clients.modalCreateTitle')} onClose={closeModal} busy={saving} size="md">
           <form onSubmit={handleSave} className="bg-white dark:bg-slate-900 rounded-2xl p-6 space-y-4 text-sm">
@@ -420,128 +417,186 @@ export const ClientsPage: React.FC = () => {
         </Modal>
       )}
 
-      {testSend && (
-        <Modal
-          title={t('clients.testModalTitle', { name: testSend.client.name })}
-          onClose={() => { if (!testSend.sending) setTestSend(null) }}
-          size="md"
-        >
-          <form onSubmit={handleTestSend} className="bg-white dark:bg-slate-900 rounded-2xl p-6 space-y-4 text-xs">
-            <div>
-              <h2 className="text-base font-semibold text-slate-900 dark:text-slate-100">
-                {t('clients.testModalTitle', { name: testSend.client.name })}
-              </h2>
-              <p className="text-slate-500 dark:text-slate-400 mt-1">{t('clients.testModalDesc')}</p>
-            </div>
+      {testSend && (() => {
+        const sendEndpoint = `${window.location.origin}${withBasePath('/send')}`
+        const liveTo = testSend.to.trim() || 'receiver@example.com'
+        const liveSubject = testSend.subject.trim()
+        const maskedAuthKey = testSend.loadingKey
+          ? '...'
+          : testSend.authKey
+            ? `${testSend.client.key_prefix}••••••••`
+            : 'ms_your_auth_key'
+        const previewCurl = buildSendCurlCommand({
+          url: sendEndpoint,
+          to: liveTo,
+          subject: liveSubject,
+          body: testSend.body,
+          authKey: testSend.showKey && testSend.authKey ? testSend.authKey : maskedAuthKey,
+        })
+        const copyableCurl = buildSendCurlCommand({
+          url: sendEndpoint,
+          to: liveTo,
+          subject: liveSubject,
+          body: testSend.body,
+          authKey: testSend.authKey || 'ms_your_auth_key',
+        })
 
-            {testSend.keyError && (
-              <div className="p-3 rounded-lg bg-rose-50 dark:bg-rose-500/15 text-rose-600 dark:text-rose-300">
-                {testSend.keyError}
+        return (
+          <Modal
+            title={t('clients.testModalTitle', { name: testSend.client.name })}
+            onClose={() => { if (!testSend.sending) setTestSend(null) }}
+            size="xl"
+          >
+            <form onSubmit={handleTestSend} className="bg-white dark:bg-slate-900 rounded-2xl p-6 space-y-4 text-xs">
+              <div>
+                <h2 className="text-base font-semibold text-slate-900 dark:text-slate-100">
+                  {t('clients.testModalTitle', { name: testSend.client.name })}
+                </h2>
+                <p className="text-slate-500 dark:text-slate-400 mt-1">{t('clients.testModalDesc')}</p>
               </div>
-            )}
 
-            <div>
-              <label className="block text-slate-600 dark:text-slate-300 mb-1">{t('clients.testKey')}</label>
-              <div className="flex items-center gap-2">
-                <input
-                  type={testSend.showKey ? 'text' : 'password'}
-                  readOnly
-                  value={testSend.loadingKey ? t('clients.testLoadingKey') : testSend.authKey}
-                  className="flex-1 px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/80 font-mono text-xs text-slate-700 dark:text-slate-200"
-                />
+              {testSend.keyError && (
+                <div className="p-3 rounded-lg bg-rose-50 dark:bg-rose-500/15 text-rose-600 dark:text-rose-300">
+                  {testSend.keyError}
+                </div>
+              )}
+
+              <div className="grid lg:grid-cols-2 gap-5 items-start">
+                <div className="space-y-3.5">
+                  <div>
+                    <label className="block text-slate-600 dark:text-slate-300 mb-1">{t('clients.testKey')}</label>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type={testSend.showKey ? 'text' : 'password'}
+                        readOnly
+                        value={testSend.loadingKey ? t('clients.testLoadingKey') : testSend.authKey}
+                        className="flex-1 px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/80 font-mono text-xs text-slate-700 dark:text-slate-200"
+                      />
+                      <button
+                        type="button"
+                        disabled={testSend.loadingKey || !testSend.authKey}
+                        onClick={() => setTestSend((prev) => (prev ? { ...prev, showKey: !prev.showKey } : prev))}
+                        className="p-2 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 disabled:opacity-45"
+                        aria-label={t('clients.revealBtn')}
+                      >
+                        {testSend.showKey ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                      </button>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-slate-600 dark:text-slate-300 mb-1">{t('clients.testTo')}</label>
+                    <input
+                      type="email"
+                      required
+                      placeholder="ops@example.com"
+                      value={testSend.to}
+                      onChange={(e) => setTestSend((prev) => (prev ? { ...prev, to: e.target.value } : prev))}
+                      className="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-slate-600 dark:text-slate-300 mb-1">{t('clients.testSubject')}</label>
+                    <input
+                      required
+                      value={testSend.subject}
+                      onChange={(e) => setTestSend((prev) => (prev ? { ...prev, subject: e.target.value } : prev))}
+                      className="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-slate-600 dark:text-slate-300 mb-1">{t('clients.testBody')}</label>
+                    <textarea
+                      rows={4}
+                      required
+                      value={testSend.body}
+                      onChange={(e) => setTestSend((prev) => (prev ? { ...prev, body: e.target.value } : prev))}
+                      className="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800"
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-3">
+                  <div className="rounded-xl border border-slate-200 dark:border-slate-700/80 bg-slate-50/70 dark:bg-slate-800/40 p-3.5 space-y-2.5">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="inline-flex items-center gap-1.5 font-medium text-slate-700 dark:text-slate-200">
+                        <Terminal className="w-3.5 h-3.5 text-indigo-500" />
+                        {t('clients.testCurlTitle')}
+                      </span>
+                      <button
+                        type="button"
+                        disabled={testSend.loadingKey}
+                        onClick={async () => {
+                          await copyText(copyableCurl)
+                          setCopiedCurl(true)
+                          toast.success(t('secret.copied'))
+                          setTimeout(() => setCopiedCurl(false), 1500)
+                        }}
+                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 disabled:opacity-45"
+                      >
+                        {copiedCurl ? <Check className="w-3 h-3 text-emerald-500" /> : <Copy className="w-3 h-3" />}
+                        {copiedCurl ? t('common.copied') : t('clients.testCurlCopy')}
+                      </button>
+                    </div>
+                    <p className="text-[11px] leading-relaxed text-slate-500 dark:text-slate-400">
+                      {t('clients.testCurlDesc')}
+                    </p>
+                    <pre className="p-3 rounded-lg bg-slate-950 text-slate-100 font-mono text-[11px] leading-relaxed overflow-x-auto max-h-64 whitespace-pre-wrap break-all">{previewCurl}</pre>
+                  </div>
+
+                  {testSend.result && (
+                    <div
+                      className={`p-3 rounded-xl border space-y-1.5 ${
+                        testSend.result.ok
+                          ? 'bg-emerald-50 dark:bg-emerald-500/10 border-emerald-200 dark:border-emerald-500/30 text-emerald-700 dark:text-emerald-300'
+                          : 'bg-rose-50 dark:bg-rose-500/10 border-rose-200 dark:border-rose-500/30 text-rose-700 dark:text-rose-300'
+                      }`}
+                    >
+                      <div className="font-medium flex items-center justify-between gap-2">
+                        <span>{t('clients.testResponse')}</span>
+                        <span className="font-mono">HTTP {testSend.result.status || 'ERR'}</span>
+                      </div>
+                      <pre className="text-[11px] font-mono whitespace-pre-wrap break-all opacity-90">
+                        {typeof testSend.result.payload === 'string'
+                          ? testSend.result.payload
+                          : JSON.stringify(testSend.result.payload, null, 2)}
+                      </pre>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
                 <button
                   type="button"
-                  disabled={testSend.loadingKey || !testSend.authKey}
-                  onClick={() => setTestSend((prev) => (prev ? { ...prev, showKey: !prev.showKey } : prev))}
-                  className="p-2 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 disabled:opacity-45"
-                  aria-label={t('clients.revealBtn')}
+                  disabled={testSend.sending}
+                  onClick={() => setTestSend(null)}
+                  className="px-4 py-2 text-xs rounded-lg border border-slate-200 dark:border-slate-700 disabled:opacity-45"
                 >
-                  {testSend.showKey ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                  {t('common.close')}
+                </button>
+                <button
+                  type="submit"
+                  disabled={
+                    testSend.sending ||
+                    testSend.loadingKey ||
+                    !testSend.authKey ||
+                    !testSend.to.trim() ||
+                    !testSend.subject.trim() ||
+                    !testSend.body
+                  }
+                  className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-medium rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white disabled:opacity-45"
+                >
+                  <Send className="w-3.5 h-3.5" />
+                  {testSend.sending ? t('clients.testSending') : t('clients.testSubmit')}
                 </button>
               </div>
-            </div>
-
-            <div>
-              <label className="block text-slate-600 dark:text-slate-300 mb-1">{t('clients.testTo')}</label>
-              <input
-                type="email"
-                required
-                placeholder="ops@example.com"
-                value={testSend.to}
-                onChange={(e) => setTestSend((prev) => (prev ? { ...prev, to: e.target.value } : prev))}
-                className="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800"
-              />
-            </div>
-
-            <div>
-              <label className="block text-slate-600 dark:text-slate-300 mb-1">{t('clients.testSubject')}</label>
-              <input
-                required
-                value={testSend.subject}
-                onChange={(e) => setTestSend((prev) => (prev ? { ...prev, subject: e.target.value } : prev))}
-                className="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800"
-              />
-            </div>
-
-            <div>
-              <label className="block text-slate-600 dark:text-slate-300 mb-1">{t('clients.testBody')}</label>
-              <textarea
-                rows={4}
-                required
-                value={testSend.body}
-                onChange={(e) => setTestSend((prev) => (prev ? { ...prev, body: e.target.value } : prev))}
-                className="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800"
-              />
-            </div>
-
-            {testSend.result && (
-              <div
-                className={`p-3 rounded-xl border space-y-1.5 ${
-                  testSend.result.ok
-                    ? 'bg-emerald-50 dark:bg-emerald-500/10 border-emerald-200 dark:border-emerald-500/30 text-emerald-700 dark:text-emerald-300'
-                    : 'bg-rose-50 dark:bg-rose-500/10 border-rose-200 dark:border-rose-500/30 text-rose-700 dark:text-rose-300'
-                }`}
-              >
-                <div className="font-medium flex items-center justify-between gap-2">
-                  <span>{t('clients.testResponse')}</span>
-                  <span className="font-mono">HTTP {testSend.result.status || 'ERR'}</span>
-                </div>
-                <pre className="text-[11px] font-mono whitespace-pre-wrap break-all opacity-90">
-                  {typeof testSend.result.payload === 'string'
-                    ? testSend.result.payload
-                    : JSON.stringify(testSend.result.payload, null, 2)}
-                </pre>
-              </div>
-            )}
-
-            <div className="flex justify-end gap-2 pt-2">
-              <button
-                type="button"
-                disabled={testSend.sending}
-                onClick={() => setTestSend(null)}
-                className="px-4 py-2 text-xs rounded-lg border border-slate-200 dark:border-slate-700 disabled:opacity-45"
-              >
-                {t('common.close')}
-              </button>
-              <button
-                type="submit"
-                disabled={
-                  testSend.sending ||
-                  testSend.loadingKey ||
-                  !testSend.authKey ||
-                  !testSend.to.trim() ||
-                  !testSend.subject.trim() ||
-                  !testSend.body
-                }
-                className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-medium rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white disabled:opacity-45"
-              >
-                <Send className="w-3.5 h-3.5" />
-                {testSend.sending ? t('clients.testSending') : t('clients.testSubmit')}
-              </button>
-            </div>
-          </form>
-        </Modal>
-      )}
+            </form>
+          </Modal>
+        )
+      })()}
     </div>
   )
 }
