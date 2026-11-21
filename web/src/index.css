@@ -245,8 +245,12 @@
     box-shadow: 0 3px 8px #4f46e51a;
   }
 
-  .primary-button:hover {
+  .primary-button:hover:not(:disabled) {
     background: #4338ca;
+  }
+
+  .primary-button:disabled {
+    opacity: 0.45;
   }
 
   .modal-backdrop {
@@ -368,7 +372,7 @@
     box-shadow: 0 3px 10px #4f46e540;
   }
 
-  html.dark .primary-button:hover {
+  html.dark .primary-button:hover:not(:disabled) {
     background: #6366f1;
   }
 

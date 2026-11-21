@@ -11,6 +11,14 @@ import type { Admin, SMTPConfig, SystemSettings } from '../types'
 
 type SubTab = 'smtp' | 'general' | 'admins'
 
+function smtpSnapshot(cfg: { host: string; port: number; user: string }): string {
+  return JSON.stringify({
+    host: cfg.host.trim(),
+    port: Number(cfg.port),
+    user: cfg.user.trim(),
+  })
+}
+
 export const SettingsPage: React.FC = () => {
   const toast = useToast()
   const { t, lang } = useI18n()
@@ -29,11 +37,13 @@ export const SettingsPage: React.FC = () => {
   const [smtpStatus, setSmtpStatus] = useState('untested')
   const [smtpTestError, setSmtpTestError] = useState('')
   const [smtpTestTo, setSmtpTestTo] = useState('')
+  const [savedSmtpSnap, setSavedSmtpSnap] = useState('')
   const [savingSmtp, setSavingSmtp] = useState(false)
   const [testingSmtp, setTestingSmtp] = useState(false)
 
   // General
   const [settings, setSettings] = useState<SystemSettings | null>(null)
+  const [savedGeneralSnap, setSavedGeneralSnap] = useState('')
   const [savingGeneral, setSavingGeneral] = useState(false)
 
   // Admins
@@ -58,6 +68,7 @@ export const SettingsPage: React.FC = () => {
     setSmtpClearPassword(false)
     setSmtpStatus(cfg.test_status || 'untested')
     setSmtpTestError(cfg.test_error || '')
+    setSavedSmtpSnap(smtpSnapshot({ host: cfg.host || '', port: cfg.port || 465, user: cfg.user || '' }))
   }
 
   const load = async () => {
@@ -67,6 +78,7 @@ export const SettingsPage: React.FC = () => {
       const [smtp, gen, adm] = await Promise.all([api.getSMTP(), api.getSettings(), api.listAdmins()])
       applySmtp(smtp)
       setSettings(gen)
+      setSavedGeneralSnap(JSON.stringify(gen))
       setAdmins(adm.items || [])
     } catch (e: any) {
       setLoadError(e.message || t('settings.loadError'))
@@ -123,6 +135,7 @@ export const SettingsPage: React.FC = () => {
     try {
       const updated = await api.updateSettings(settings)
       setSettings(updated)
+      setSavedGeneralSnap(JSON.stringify(updated))
       toast.success(t('settings.general.saveSuccess'))
     } catch (e: any) {
       toast.error(e.message)
@@ -130,6 +143,22 @@ export const SettingsPage: React.FC = () => {
       setSavingGeneral(false)
     }
   }
+
+  const currentSmtpSnap = smtpSnapshot({ host: smtpHost, port: smtpPort, user: smtpUser })
+  const smtpDirty =
+    savedSmtpSnap !== '' &&
+    (currentSmtpSnap !== savedSmtpSnap || smtpClearPassword || smtpPassword !== '')
+  const generalDirty = settings ? JSON.stringify(settings) !== savedGeneralSnap : false
+
+  useEffect(() => {
+    if (!smtpDirty && !generalDirty) return
+    const beforeUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault()
+      event.returnValue = ''
+    }
+    window.addEventListener('beforeunload', beforeUnload)
+    return () => window.removeEventListener('beforeunload', beforeUnload)
+  }, [smtpDirty, generalDirty])
 
   const changeOwnPassword = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -275,7 +304,7 @@ export const SettingsPage: React.FC = () => {
           </div>
 
           <div className="flex flex-wrap gap-2 pt-2">
-            <button type="submit" disabled={savingSmtp} className="primary-button">
+            <button type="submit" disabled={savingSmtp || !smtpDirty} className="primary-button">
               {savingSmtp && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
               {savingSmtp ? t('common.saving') : t('settings.smtp.saveBtn')}
             </button>
@@ -350,7 +379,7 @@ export const SettingsPage: React.FC = () => {
             />
             <span>{t('settings.general.storeBody')}</span>
           </label>
-          <button type="submit" disabled={savingGeneral} className="primary-button">
+          <button type="submit" disabled={savingGeneral || !generalDirty} className="primary-button">
             {savingGeneral ? t('common.saving') : t('common.save')}
           </button>
         </form>
@@ -369,7 +398,7 @@ export const SettingsPage: React.FC = () => {
                 <label htmlFor="own-new" className="block text-xs mb-1">{t('settings.admins.newPassword')}</label>
                 <input id="own-new" type="password" required minLength={8} value={newPwd} onChange={(e) => setNewPwd(e.target.value)} className="w-full px-3 py-2 text-xs border rounded-lg" />
               </div>
-              <button type="submit" disabled={changingPwd} className="primary-button">
+              <button type="submit" disabled={changingPwd || !oldPwd || !newPwd} className="primary-button">
                 {t('settings.admins.changePwdBtn')}
               </button>
             </form>
@@ -384,7 +413,7 @@ export const SettingsPage: React.FC = () => {
                 <label htmlFor="new-adm-p" className="block text-xs mb-1">{t('settings.admins.password')}</label>
                 <input id="new-adm-p" type="password" required minLength={8} value={newAdminPass} onChange={(e) => setNewAdminPass(e.target.value)} className="w-full px-3 py-2 text-xs border rounded-lg" />
               </div>
-              <button type="submit" disabled={creatingAdmin} className="primary-button">
+              <button type="submit" disabled={creatingAdmin || !newAdminUser.trim() || !newAdminPass} className="primary-button">
                 {t('settings.admins.createBtn')}
               </button>
             </form>
@@ -425,7 +454,7 @@ export const SettingsPage: React.FC = () => {
             </div>
             <div className="flex justify-end gap-2">
               <button type="button" onClick={() => setResetAdmin(null)} className="px-3.5 py-2 rounded-lg border border-slate-200 dark:border-slate-700">{t('common.cancel')}</button>
-              <button type="submit" disabled={resetting} className="px-4 py-2 rounded-lg bg-indigo-600 text-white">{t('common.save')}</button>
+              <button type="submit" disabled={resetting || !resetPwd} className="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white disabled:opacity-45">{t('common.save')}</button>
             </div>
           </form>
         </Modal>

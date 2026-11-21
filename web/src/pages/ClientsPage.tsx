@@ -287,7 +287,7 @@ export const ClientsPage: React.FC = () => {
             </label>
             <div className="flex justify-end gap-2 pt-2">
               <button type="button" disabled={saving} onClick={closeModal} className="px-3.5 py-2 text-xs rounded-lg border border-slate-200 dark:border-slate-700">{t('common.cancel')}</button>
-              <button type="submit" disabled={saving} className="px-4 py-2 text-xs font-medium rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white disabled:opacity-50">
+              <button type="submit" disabled={saving || (form.id ? JSON.stringify(form) === initialSnap : !form.name.trim())} className="px-4 py-2 text-xs font-medium rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white disabled:opacity-45">
                 {saving ? t('common.saving') : t('common.save')}
               </button>
             </div>
