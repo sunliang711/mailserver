@@ -57,6 +57,9 @@ export const MigrationPage: React.FC = () => {
     try {
       const summary = await api.inspectMigration(fd)
       setInspectRes(summary)
+      setImpMailLogs(Boolean(summary.includes?.mail_logs))
+      setImpAdmins(Boolean(summary.includes?.admins))
+      setImpAudit(Boolean(summary.includes?.audit_logs))
       toast.info(t('migration.inspectDone'))
     } catch (e: any) {
       setInspectRes(null)
@@ -85,6 +88,7 @@ export const MigrationPage: React.FC = () => {
           settings: res.counts.system_settings,
           clients: res.counts.clients,
           cron: res.counts.cron_jobs,
+          admins: res.counts.admins,
           mails: res.counts.mail_logs,
         })
       )
@@ -208,9 +212,33 @@ export const MigrationPage: React.FC = () => {
               )}
             </div>
             <div className="flex flex-wrap gap-4 text-xs text-slate-700 dark:text-slate-300">
-              <label className="flex items-center gap-1.5"><input type="checkbox" checked={impMailLogs} onChange={(e) => setImpMailLogs(e.target.checked)} />{t('migration.importIncludeMailLogs')}</label>
-              <label className="flex items-center gap-1.5"><input type="checkbox" checked={impAdmins} onChange={(e) => setImpAdmins(e.target.checked)} />{t('migration.importIncludeAdmins')}</label>
-              <label className="flex items-center gap-1.5"><input type="checkbox" checked={impAudit} onChange={(e) => setImpAudit(e.target.checked)} />{t('migration.importIncludeAudit')}</label>
+              <label className={`flex items-center gap-1.5 ${inspectRes && !inspectRes.includes?.mail_logs ? 'opacity-45' : ''}`}>
+                <input
+                  type="checkbox"
+                  checked={impMailLogs}
+                  disabled={Boolean(inspectRes && !inspectRes.includes?.mail_logs)}
+                  onChange={(e) => setImpMailLogs(e.target.checked)}
+                />
+                {t('migration.importIncludeMailLogs')}
+              </label>
+              <label className={`flex items-center gap-1.5 ${inspectRes && !inspectRes.includes?.admins ? 'opacity-45' : ''}`}>
+                <input
+                  type="checkbox"
+                  checked={impAdmins}
+                  disabled={Boolean(inspectRes && !inspectRes.includes?.admins)}
+                  onChange={(e) => setImpAdmins(e.target.checked)}
+                />
+                {t('migration.importIncludeAdmins')}
+              </label>
+              <label className={`flex items-center gap-1.5 ${inspectRes && !inspectRes.includes?.audit_logs ? 'opacity-45' : ''}`}>
+                <input
+                  type="checkbox"
+                  checked={impAudit}
+                  disabled={Boolean(inspectRes && !inspectRes.includes?.audit_logs)}
+                  onChange={(e) => setImpAudit(e.target.checked)}
+                />
+                {t('migration.importIncludeAudit')}
+              </label>
             </div>
             <p className="text-xs text-slate-500 dark:text-slate-400">
               {inspectRes ? t('migration.importHintReady') : t('migration.importHintPending')}

@@ -378,7 +378,7 @@ export const en: Record<TranslationKey, string> = {
   'migration.importBtn': 'Confirm Import',
   'migration.importing': 'Importing…',
   'migration.replaceConfirm': 'Full Replace will clear existing clients and selected logs before restoring. Continue?',
-  'migration.importSuccess': 'Imported: {settings} settings, {clients} clients, {cron} cron jobs, {mails} mail logs',
+  'migration.importSuccess': 'Imported: {settings} settings, {clients} clients, {cron} cron jobs, {admins} admins, {mails} mail logs',
   'migration.importError': 'Import failed',
   'migration.inspectSummaryTitle': 'Inspection Summary (Exported: {time})',
   'migration.inspectCounts': 'Settings {settings} · Clients {clients} · Cron {cron} · Admins {admins} · Mail Logs {mails} · Audit {audit}',

@@ -60,6 +60,19 @@ func TestExportInspectImportAcrossInstances(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	adminHashA, err := crypto.HashPassword("old-pass-123")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := storeA.CreateAdmin(ctx, &db.Admin{
+		ID:           crypto.NewULID(),
+		Username:     "admin",
+		PasswordHash: adminHashA,
+		IsActive:     true,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
 	svcA := NewService(storeA, cipherA)
 	bundle, err := svcA.Export(ctx, ExportOptions{
 		IncludeMailLogs:  true,
@@ -71,7 +84,7 @@ func TestExportInspectImportAcrossInstances(t *testing.T) {
 		t.Fatalf("Export failed: %v", err)
 	}
 
-	// Instance B with distinct master key
+	// Instance B with distinct master key and existing admin "eagle"
 	dirB := t.TempDir()
 	keyB, _ := config.EnsureMasterKey(dirB, "")
 	cipherB, _ := crypto.NewCipher(keyB)
@@ -81,19 +94,32 @@ func TestExportInspectImportAcrossInstances(t *testing.T) {
 	}
 	defer storeB.Close()
 
+	eagleHashB, err := crypto.HashPassword("new-pass-456")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := storeB.CreateAdmin(ctx, &db.Admin{
+		ID:           crypto.NewULID(),
+		Username:     "eagle",
+		PasswordHash: eagleHashB,
+		IsActive:     true,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
 	svcB := NewService(storeB, cipherB)
 	summary, err := svcB.Inspect(ctx, bundle, "migrate-pass-2026")
 	if err != nil {
 		t.Fatalf("Inspect failed: %v", err)
 	}
-	if summary.Counts.Clients != 1 || summary.Counts.MailLogs != 1 {
+	if summary.Counts.Clients != 1 || summary.Counts.MailLogs != 1 || summary.Counts.Admins != 1 {
 		t.Fatalf("unexpected summary counts: %+v", summary.Counts)
 	}
 
 	counts, err := svcB.Import(ctx, bundle, ImportOptions{
 		Passphrase:       "migrate-pass-2026",
-		Mode:             "replace",
-		ConflictStrategy: "overwrite",
+		Mode:             "merge",
+		ConflictStrategy: "skip",
 		IncludeMailLogs:  true,
 		IncludeAdmins:    true,
 		IncludeAuditLogs: true,
@@ -101,8 +127,16 @@ func TestExportInspectImportAcrossInstances(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Import failed: %v", err)
 	}
-	if counts.Clients != 1 || counts.MailLogs != 1 {
+	if counts.Clients != 1 || counts.MailLogs != 1 || counts.Admins != 1 {
 		t.Fatalf("unexpected import counts: %+v", counts)
+	}
+
+	importedAdmin, err := storeB.GetAdminByUsername(ctx, "admin")
+	if err != nil || !crypto.VerifyPassword(importedAdmin.PasswordHash, "old-pass-123") {
+		t.Fatalf("expected imported admin 'admin' with working password, got %+v, err=%v", importedAdmin, err)
+	}
+	if _, err := storeB.GetAdminByUsername(ctx, "eagle"); err != nil {
+		t.Fatalf("expected existing admin 'eagle' to remain, err=%v", err)
 	}
 
 	smtpB, err := storeB.GetSMTPConfig(ctx, cipherB)

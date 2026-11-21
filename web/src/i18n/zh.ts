@@ -376,7 +376,7 @@ export const zh = {
   'migration.importBtn': '确认导入',
   'migration.importing': '正在导入…',
   'migration.replaceConfirm': '全量覆盖模式会清空现有客户端、发信记录等数据并以导入包重建，确定继续吗？',
-  'migration.importSuccess': '导入成功：SMTP/系统设置 {settings} 项、客户端 {clients} 个、定时任务 {cron} 个、发信记录 {mails} 条',
+  'migration.importSuccess': '导入成功：SMTP/系统设置 {settings} 项、客户端 {clients} 个、定时任务 {cron} 个、管理员 {admins} 个、发信记录 {mails} 条',
   'migration.importError': '导入迁移包失败',
   'migration.inspectSummaryTitle': '预检摘要（导出时间：{time}）',
   'migration.inspectCounts': '设置 {settings} · 客户端 {clients} · 定时任务 {cron} · 管理员 {admins} · 发信记录 {mails} · 审计 {audit}',
