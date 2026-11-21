@@ -1,154 +1,85 @@
 # mailserver
 
-一个基于 Go 和 Gin 的简单邮件发送服务，提供 HTTP 接口用于发送邮件。
+一个基于 Go、Gin 和 SQLite 的轻量级 HTTP 邮件发送网关，内置 **React + Vite** Web 管理控制台（`//go:embed` 单二进制打包）。
 
 ## 功能特性
 
-- 提供 HTTP API 发送邮件
-- 基于 SMTP 服务发信
-- 支持通过配置文件管理邮件账号和服务端口
-- 支持 TLS 启动
-- 记录请求和响应日志，便于排查问题
+- **内置 Web 管理控制台**：首次启动自动进入初始化向导创建管理员账号，SMTP 配置、多客户端 `auth_key`、发信记录、定时任务、审计日志、环境迁移及全局运行参数均可在 Web UI 中配置并实时生效。
+- **多客户端 `auth_key` 管理**：支持为不同业务系统签发独立的 `auth_key`（SHA-256 哈希鉴权 + 主密钥加密存储），支持独立 RPM 限流、过期时间、启停控制、密钥轮换与调用统计。
+- **兼容既有发信接口**：`POST /send` 请求/响应契约保持不变，请求体中的 `auth_key` 在服务端校验并自动脱敏记录日志。
+- **独立发信记录页面**：记录每次 `POST /send` 与控制台测试发信的收件人、主题、状态、耗时与错误信息，支持多维筛选、详情查看及 CSV/JSON 导出（默认不留存邮件正文，可在系统设置按需开启）。
+- **定时任务与 SafeKeep 容灾备份**：内置 `robfig/cron/v3` 调度器（清理审计日志、清理历史发信记录、SMTP 连通性巡检、定时备份环境迁移包至 SafeKeep），支持配置可选迁移加密口令并调用 SafeKeep `POST /api/v1/backups` 上传。
+- **审计日志与环境迁移（`.msbundle`）**：完整记录管理端与客户端关键行为；支持导出可移植加密迁移包（Argon2id + AES-256-GCM），在新实例预检冲突并自动用目标主密钥重加密恢复。
 
-## 技术栈
+## 启动配置（配置文件与环境变量）
 
-- Go
-- Gin
-- Viper
-- Logrus
+监听端口、TLS 证书与数据目录仍通过 `config.yaml` 与环境变量配置，优先级：**命令行参数 > 环境变量 > `config.yaml` > 默认值**。
 
-## 项目结构
-
-```text
-.
-├── main.go              # 服务入口与接口实现
-├── config.yaml          # 服务配置
-├── Dockerfile           # Docker 构建文件
-├── docker-compose.yaml  # Docker Compose 配置
-├── go.mod
-└── go.sum
-```
-
-## 配置说明
-
-服务启动时会读取当前目录下的 `config.yaml`。
-
-示例配置：
+`config.yaml` 示例：
 
 ```yaml
-email:
-  host: smtp.host.com
-  port: 465
-  user: user@host.com
-  password: your_password
-
 server:
   port: 3000
+  data_dir: ./data
 
 tls:
   enable: false
   key: xx.key
   cert: xx.pem
-
-auth:
-  key: secretKeyxxx
 ```
 
-字段说明：
+常用环境变量：
 
-- `email.host`: SMTP 服务器地址
-- `email.port`: SMTP 端口
-- `email.user`: SMTP 登录账号
-- `email.password`: SMTP 登录密码
-- `server.port`: HTTP 服务监听端口
-- `tls.enable`: 是否启用 HTTPS
-- `tls.key`: TLS 私钥文件路径
-- `tls.cert`: TLS 证书文件路径
-- `auth.key`: 调用接口时需要提供的认证密钥
+- `MAILSERVER_CONFIG`：配置文件路径（镜像内默认为 `/app/config.yaml`）
+- `MAILSERVER_PORT`：HTTP 服务监听端口（默认 `3000`）
+- `MAILSERVER_DATA_DIR`：数据持久化目录（默认 `./data`，镜像内为 `/data`，存放 `mailserver.db` 与 `master.key`）
+- `MAILSERVER_MASTER_KEY`：可选 32 字节加密主密钥（64 位十六进制或 Base64；未设置时自动在数据目录生成 `master.key`）
+- `MAILSERVER_TLS_ENABLE`：是否启用 HTTPS（`true` / `false`）
+- `MAILSERVER_TLS_CERT`：TLS 证书文件路径
+- `MAILSERVER_TLS_KEY`：TLS 私钥文件路径
+- `MAILSERVER_CORS_ORIGINS`：额外允许的跨域 Origin（逗号分隔）
+- `MAILSERVER_PUBLIC_BASE_URL`：对外访问地址默认值
 
-## 本地运行
+> 注意：`auth_key` 不在 `config.yaml` 中配置，请在启动后通过 Web UI 的「客户端与密钥」页面创建。
 
-### 1. 安装依赖
+## 构建与运行
+
+### 方式一：从源码构建单二进制
 
 ```bash
-go mod download
+# 构建前端资源与单二进制 ./mailserver
+make build
+
+# 启动服务
+./mailserver
 ```
 
-### 2. 修改配置
+启动后访问 `http://localhost:3000` 完成首次管理员初始化，然后在「系统设置」配置 SMTP 服务器，并在「客户端与密钥」创建客户端生成 `auth_key`。
 
-根据你的 SMTP 服务商信息修改 `config.yaml`：
-
-- 邮箱服务器地址
-- 端口
-- 用户名
-- 密码
-- 自定义接口认证密钥
-
-### 3. 启动服务
-
-```bash
-go run main.go
-```
-
-启动后默认监听：
-
-```text
-http://localhost:3000
-```
-
-如果启用了 TLS，则使用：
-
-```text
-https://localhost:3000
-```
-
-## Docker 运行
-
-### 构建镜像
-
-```bash
-docker build -t mailserver .
-```
-
-### 启动容器
-
-```bash
-docker run --rm -p 3000:3000 -v $(pwd)/config.yaml:/usr/local/bin/config.yaml mailserver
-```
-
-### 使用 Docker Compose
+### 方式二：Docker Compose
 
 ```bash
 docker compose up --build
 ```
 
-## 接口说明
-
-### 发送邮件
+## 发信接口说明
 
 - 方法：`POST`
 - 路径：`/send`
 - Content-Type：`application/json`
 
-#### 请求体
+请求体：
 
 ```json
 {
   "to": "receiver@example.com",
   "subject": "Test Subject",
   "body": "Hello, this is a test email.",
-  "auth_key": "secretKeyxxx"
+  "auth_key": "ms_your_client_auth_key"
 }
 ```
 
-字段说明：
-
-- `to`: 收件人邮箱
-- `subject`: 邮件主题
-- `body`: 邮件正文
-- `auth_key`: 接口认证密钥，需要与 `config.yaml` 中的 `auth.key` 一致
-
-#### 成功响应
+成功响应（`200`）：
 
 ```json
 {
@@ -157,97 +88,11 @@ docker compose up --build
 }
 ```
 
-#### 失败响应
-
-参数错误或缺少字段时：
-
-```json
-{
-  "code": 1,
-  "msg": "{\"to\":\"receiver\",\"subject\":\"your subject\",\"body\":\"your content\",\"auth_key\":\"someKey\"} as request body"
-}
-```
-
-认证失败时：
-
-```json
-{
-  "code": 1,
-  "msg": "Invalid auth key"
-}
-```
-
-发送失败或服务内部错误时：
-
-```json
-{
-  "code": 1,
-  "msg": "send email error"
-}
-```
-
-或：
-
-```json
-{
-  "code": 1,
-  "msg": "New email agent error: xxx"
-}
-```
-
-## 调用示例
-
-### curl 示例
+## 测试
 
 ```bash
-curl -X POST http://localhost:3000/send \
-  -H "Content-Type: application/json" \
-  -d '{
-    "to": "receiver@example.com",
-    "subject": "Test Mail",
-    "body": "Hello from mailserver",
-    "auth_key": "secretKeyxxx"
-  }'
+make test
 ```
-
-### HTTPS 示例
-
-如果启用了 TLS：
-
-```bash
-curl -k -X POST https://localhost:3000/send \
-  -H "Content-Type: application/json" \
-  -d '{
-    "to": "receiver@example.com",
-    "subject": "Secure Mail",
-    "body": "Hello over TLS",
-    "auth_key": "secretKeyxxx"
-  }'
-```
-
-## 日志说明
-
-服务会记录以下内容：
-
-- 请求方法
-- 请求路径
-- Query 参数
-- 请求体
-- 客户端 IP
-- User-Agent
-- 响应状态码
-- 响应内容
-- 请求耗时
-
-便于排查接口调用和发信问题。
-
-## 注意事项
-
-- `auth_key` 放在请求体中，不是放在请求头中
-- 当前仅提供一个发信接口：`POST /send`
-- 邮件内容 `body` 为普通字符串内容
-- 生产环境建议妥善保管 `config.yaml` 中的邮箱密码和认证密钥
-- 建议为 `auth.key` 配置一个足够复杂的随机字符串
 
 ## License
 

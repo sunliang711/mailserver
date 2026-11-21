@@ -1,6 +1,22 @@
 .DS_Store
 *.swp
 .idea/
+.vscode/
 /mailserver
+/mailserver.tmp
+*.exe
+*.test
+*.out
 *.key
 *.pem
+
+# Local runtime data
+/data/
+*.db
+*.db-shm
+*.db-wal
+.env
+
+# Frontend
+web/node_modules/
+web/dist/

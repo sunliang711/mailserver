@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"io"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -29,12 +30,18 @@ func NewRequestLogger(logger zerolog.Logger) *RequestLogger {
 
 func (m *RequestLogger) Handler() gin.HandlerFunc {
 	return func(c *gin.Context) {
+		path := c.Request.URL.Path
+		if path != "/send" {
+			c.Next()
+			return
+		}
+
 		start := time.Now()
 		bodyBytes := m.readRequestBody(c)
 
 		m.logger.Info().
 			Str("method", c.Request.Method).
-			Str("path", c.Request.URL.Path).
+			Str("path", path).
 			Str("query", c.Request.URL.RawQuery).
 			Str("request_body", sanitizeBody(bodyBytes)).
 			Str("client_ip", c.ClientIP()).
@@ -88,8 +95,10 @@ func sanitizeBody(body []byte) string {
 		return string(trimmed)
 	}
 
-	if _, ok := payload["auth_key"]; ok {
-		payload["auth_key"] = redactedValue
+	for k := range payload {
+		if strings.EqualFold(k, "auth_key") || strings.EqualFold(k, "password") || strings.EqualFold(k, "passphrase") {
+			payload[k] = redactedValue
+		}
 	}
 
 	sanitized, err := json.Marshal(payload)

@@ -4,10 +4,13 @@ services:
     build: .
     ports:
       - "3000:3000"
-    # environment:
-    #   ALIDDNS_LOG_LEVEL: info
+    environment:
+      MAILSERVER_CONFIG: /app/config.yaml
+      MAILSERVER_PORT: "3000"
+      MAILSERVER_DATA_DIR: /data
     volumes:
-      - ./config.yaml:/usr/local/bin/config.yaml
+      - ./config.yaml:/app/config.yaml
+      - ./data:/data
     networks:
       - eagle
 

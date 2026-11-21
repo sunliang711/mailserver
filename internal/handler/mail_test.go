@@ -8,10 +8,11 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/rs/zerolog"
-	"github.com/sunliang711/mailserver/internal/config"
+	"github.com/sunliang711/mailserver/internal/db"
 	"github.com/sunliang711/mailserver/internal/service"
 )
 
@@ -25,8 +26,28 @@ func (s *stubMailSender) SendEmail(_ context.Context, input service.SendEmailInp
 	return s.err
 }
 
+type stubClientAuth struct {
+	clients map[string]*db.Client
+}
+
+func (a *stubClientAuth) AuthenticateClient(_ context.Context, authKey string) (*db.Client, error) {
+	if cl, ok := a.clients[authKey]; ok {
+		return cl, nil
+	}
+	return nil, db.ErrNotFound
+}
+
 func TestMailHandlerSendEmail(t *testing.T) {
 	gin.SetMode(gin.TestMode)
+
+	expired := time.Now().UTC().Add(-time.Hour)
+	auth := &stubClientAuth{
+		clients: map[string]*db.Client{
+			"secret":   {ID: "cli_1", Name: "app-1", Enabled: true},
+			"disabled": {ID: "cli_2", Name: "app-2", Enabled: false},
+			"expired":  {ID: "cli_3", Name: "app-3", Enabled: true, ExpiresAt: &expired},
+		},
+	}
 
 	tests := []struct {
 		name           string
@@ -47,6 +68,22 @@ func TestMailHandlerSendEmail(t *testing.T) {
 		{
 			name:           "invalid auth key",
 			body:           `{"to":"receiver@example.com","subject":"subject","body":"hello","auth_key":"wrong"}`,
+			sender:         &stubMailSender{},
+			expectedStatus: http.StatusBadRequest,
+			expectedCode:   1,
+			expectedMsg:    "Invalid auth key",
+		},
+		{
+			name:           "disabled client",
+			body:           `{"to":"receiver@example.com","subject":"subject","body":"hello","auth_key":"disabled"}`,
+			sender:         &stubMailSender{},
+			expectedStatus: http.StatusBadRequest,
+			expectedCode:   1,
+			expectedMsg:    "Invalid auth key",
+		},
+		{
+			name:           "expired client",
+			body:           `{"to":"receiver@example.com","subject":"subject","body":"hello","auth_key":"expired"}`,
 			sender:         &stubMailSender{},
 			expectedStatus: http.StatusBadRequest,
 			expectedCode:   1,
@@ -85,9 +122,7 @@ func TestMailHandlerSendEmail(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			router := gin.New()
-			mailHandler := NewMailHandler(zerolog.Nop(), &config.Config{
-				Auth: config.AuthConfig{Key: "secret"},
-			}, tt.sender)
+			mailHandler := NewMailHandler(zerolog.Nop(), auth, tt.sender, nil, nil)
 			router.POST("/send", mailHandler.SendEmail)
 
 			req := httptest.NewRequest(http.MethodPost, "/send", bytes.NewBufferString(tt.body))
