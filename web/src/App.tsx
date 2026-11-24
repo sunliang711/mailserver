@@ -37,6 +37,7 @@ export function App() {
   const [bootFailed, setBootFailed] = useState(false)
   const [initialized, setInitialized] = useState(true)
   const [admin, setAdmin] = useState<Admin | null>(null)
+  const [resetAdminEnvActive, setResetAdminEnvActive] = useState(false)
   const [sessionExpired, setSessionExpired] = useState(false)
   const [version, setVersion] = useState('dev')
   const [tab, setTab] = useState<NavTab>(initialTab())
@@ -50,11 +51,15 @@ export function App() {
       try {
         const st = await api.setupStatus()
         setInitialized(st.initialized)
+        setResetAdminEnvActive(Boolean(st.reset_admin_env_active))
         if (st.version) setVersion(st.version)
         if (st.initialized) {
           try {
             const me = await api.me()
             setAdmin(me.admin)
+            if (me.reset_admin_env_active !== undefined) {
+              setResetAdminEnvActive(Boolean(me.reset_admin_env_active))
+            }
             if (me.version) setVersion(me.version)
           } catch {
             setAdmin(null)
@@ -89,8 +94,9 @@ export function App() {
     }
   }, [isAuthenticated])
 
-  const handleReauthSuccess = (nextAdmin: Admin) => {
+  const handleReauthSuccess = (nextAdmin: Admin, resetActive?: boolean) => {
     setAdmin(nextAdmin)
+    if (resetActive !== undefined) setResetAdminEnvActive(Boolean(resetActive))
     setSessionExpired(false)
     const resolve = reauthResolverRef.current
     reauthResolverRef.current = null
@@ -153,16 +159,44 @@ export function App() {
       <AuthPage
         mode="setup"
         version={version}
-        onSuccess={(a) => {
+        resetAdminEnvActive={resetAdminEnvActive}
+        onSuccess={(a, resetActive) => {
           setInitialized(true)
           setAdmin(a)
+          if (resetActive !== undefined) setResetAdminEnvActive(Boolean(resetActive))
         }}
       />
     )
   }
 
   if (!admin) {
-    return <AuthPage mode="login" version={version} onSuccess={(a) => setAdmin(a)} />
+    return (
+      <AuthPage
+        mode="login"
+        version={version}
+        resetAdminEnvActive={resetAdminEnvActive}
+        onSuccess={(a, resetActive) => {
+          setAdmin(a)
+          if (resetActive !== undefined) setResetAdminEnvActive(Boolean(resetActive))
+        }}
+      />
+    )
+  }
+
+  if (admin.must_change_password) {
+    return (
+      <AuthPage
+        mode="force-reset"
+        username={admin.username}
+        version={version}
+        resetAdminEnvActive={resetAdminEnvActive}
+        onSuccess={(a, resetActive) => {
+          setAdmin(a)
+          if (resetActive !== undefined) setResetAdminEnvActive(Boolean(resetActive))
+        }}
+        onLogout={handleLogout}
+      />
+    )
   }
 
   return (
@@ -172,6 +206,7 @@ export function App() {
         onNavigate={navigate}
         admin={admin}
         version={version}
+        resetAdminEnvActive={resetAdminEnvActive}
         onLogout={handleLogout}
       >
         {tab === 'dashboard' && <DashboardPage onNavigate={navigate} />}

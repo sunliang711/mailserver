@@ -30,7 +30,11 @@ func (s *AdminServer) handleSetupStatus(c *gin.Context) {
 		writeError(c, http.StatusInternalServerError, "db_error", err.Error())
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"initialized": n > 0, "version": s.version})
+	c.JSON(http.StatusOK, gin.H{
+		"initialized":            n > 0,
+		"version":                s.version,
+		"reset_admin_env_active": s.cfg.Server.ResetAdmin,
+	})
 }
 
 func (s *AdminServer) handleSetupInit(c *gin.Context) {
@@ -83,7 +87,11 @@ func (s *AdminServer) handleSetupInit(c *gin.Context) {
 		IPAddress:    c.ClientIP(),
 		UserAgent:    c.Request.UserAgent(),
 	})
-	c.JSON(http.StatusCreated, gin.H{"admin": admin, "token": tok})
+	c.JSON(http.StatusCreated, gin.H{
+		"admin":                  admin,
+		"token":                  tok,
+		"reset_admin_env_active": s.cfg.Server.ResetAdmin,
+	})
 }
 
 func (s *AdminServer) handleAdminLogin(c *gin.Context) {
@@ -127,7 +135,11 @@ func (s *AdminServer) handleAdminLogin(c *gin.Context) {
 		IPAddress:    c.ClientIP(),
 		UserAgent:    c.Request.UserAgent(),
 	})
-	c.JSON(http.StatusOK, gin.H{"admin": admin, "token": tok})
+	c.JSON(http.StatusOK, gin.H{
+		"admin":                  admin,
+		"token":                  tok,
+		"reset_admin_env_active": s.cfg.Server.ResetAdmin,
+	})
 }
 
 func (s *AdminServer) handleAdminLogout(c *gin.Context) {
@@ -144,7 +156,11 @@ func (s *AdminServer) handleAdminLogout(c *gin.Context) {
 }
 
 func (s *AdminServer) handleAdminMe(c *gin.Context) {
-	c.JSON(http.StatusOK, gin.H{"admin": currentAdmin(c), "version": s.version})
+	c.JSON(http.StatusOK, gin.H{
+		"admin":                  currentAdmin(c),
+		"version":                s.version,
+		"reset_admin_env_active": s.cfg.Server.ResetAdmin,
+	})
 }
 
 func (s *AdminServer) handleAdminChangePassword(c *gin.Context) {
@@ -157,12 +173,18 @@ func (s *AdminServer) handleAdminChangePassword(c *gin.Context) {
 		writeError(c, http.StatusBadRequest, "invalid_json", err.Error())
 		return
 	}
-	if !crypto.VerifyPassword(admin.PasswordHash, req.OldPassword) {
-		writeError(c, http.StatusBadRequest, "invalid_password", "current password is incorrect")
-		return
+	if !admin.MustChangePassword || req.OldPassword != "" {
+		if !crypto.VerifyPassword(admin.PasswordHash, req.OldPassword) {
+			writeError(c, http.StatusBadRequest, "invalid_password", "current password is incorrect")
+			return
+		}
 	}
 	if len(req.NewPassword) < 8 {
 		writeError(c, http.StatusBadRequest, "weak_password", "new password must be at least 8 characters")
+		return
+	}
+	if len(req.NewPassword) > 72 {
+		writeError(c, http.StatusBadRequest, "weak_password", "new password must not exceed 72 characters")
 		return
 	}
 	hash, err := crypto.HashPassword(req.NewPassword)
@@ -175,6 +197,7 @@ func (s *AdminServer) handleAdminChangePassword(c *gin.Context) {
 		return
 	}
 	admin.PasswordHash = hash
+	admin.MustChangePassword = false
 	if tok, err := s.signAdminToken(admin); err == nil {
 		s.setAdminCookie(c, tok)
 	}
@@ -188,7 +211,11 @@ func (s *AdminServer) handleAdminChangePassword(c *gin.Context) {
 		IPAddress:    c.ClientIP(),
 		UserAgent:    c.Request.UserAgent(),
 	})
-	c.JSON(http.StatusOK, gin.H{"status": "ok"})
+	c.JSON(http.StatusOK, gin.H{
+		"status":                 "ok",
+		"admin":                  admin,
+		"reset_admin_env_active": s.cfg.Server.ResetAdmin,
+	})
 }
 
 func isHTTPS(r *http.Request) bool {

@@ -318,3 +318,203 @@ func TestAdminAndSafeKeepBackupE2E(t *testing.T) {
 		t.Fatalf("wrapped /api/mail/healthz status = %d, want 200", subHealth.StatusCode)
 	}
 }
+
+func TestResetAdminFlowE2E(t *testing.T) {
+	dir := t.TempDir()
+	cfg := &config.Config{
+		Server:   config.ServerConfig{Port: 3000, DataDir: dir},
+		Defaults: config.DefaultSystemSettings(3000, false),
+	}
+	key, err := config.EnsureMasterKey(dir, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cipher, err := crypto.NewCipher(key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	store, err := db.Open(filepath.Join(dir, "reset_test.db"), dir, cfg.Defaults)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+
+	auditLog := audit.NewLogger(store)
+	factory := email.NewFactory(store, cipher)
+	mailSvc := service.NewMailService(zerolog.Nop(), factory, store, auditLog)
+	migSvc := migration.NewService(store, cipher)
+	sched := scheduler.NewEngine(store, factory, auditLog, zerolog.Nop(), cipher, migSvc)
+	if err := sched.Start(); err != nil {
+		t.Fatal(err)
+	}
+	defer sched.Stop()
+
+	adminSrv := NewAdminServer(cfg, store, cipher, factory, mailSvc, sched, migSvc, auditLog, nil)
+	mailHandler := handler.NewMailHandler(zerolog.Nop(), handler.NewStoreClientAuth(store), mailSvc, store, auditLog)
+	engine := NewGinEngine(middleware.NewRequestLogger(zerolog.Nop()), adminSrv)
+	RegisterRoutes(engine, mailHandler, adminSrv)
+
+	ts := httptest.NewServer(engine)
+	defer ts.Close()
+
+	httpClient := &http.Client{}
+	doWithCookies := func(method, path string, body any, cks []*http.Cookie) *http.Response {
+		var r io.Reader
+		if body != nil {
+			b, _ := json.Marshal(body)
+			r = bytes.NewReader(b)
+		}
+		req, err := http.NewRequest(method, ts.URL+path, r)
+		if err != nil {
+			t.Fatal(err)
+		}
+		req.Header.Set("Content-Type", "application/json")
+		for _, ck := range cks {
+			req.AddCookie(ck)
+		}
+		res, err := httpClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return res
+	}
+
+	// 1. Setup initial custom admin account and capture old session cookies
+	initRes := doWithCookies(http.MethodPost, "/admin/api/v1/setup/init", map[string]string{
+		"username": "eagle",
+		"password": "password123",
+	}, nil)
+	if initRes.StatusCode != http.StatusCreated {
+		t.Fatalf("setup init status = %d", initRes.StatusCode)
+	}
+	oldCookies := initRes.Cookies()
+	_ = initRes.Body.Close()
+
+	sumRes := doWithCookies(http.MethodGet, "/admin/api/v1/dashboard/summary", nil, oldCookies)
+	_ = sumRes.Body.Close()
+	if sumRes.StatusCode != http.StatusOK {
+		t.Fatalf("initial dashboard summary = %d, want 200", sumRes.StatusCode)
+	}
+
+	// 2. Simulate restart with RESET_ADMIN=true
+	var banner bytes.Buffer
+	resetUser, tempPass, err := store.ResetAdminOnStartup(context.Background(), &banner)
+	if err != nil {
+		t.Fatalf("ResetAdminOnStartup failed: %v", err)
+	}
+	if resetUser != "eagle" || !strings.HasPrefix(tempPass, "adm_") {
+		t.Fatalf("unexpected reset result user=%q tempPass=%q", resetUser, tempPass)
+	}
+	if !strings.Contains(banner.String(), tempPass) || !strings.Contains(banner.String(), "eagle") {
+		t.Fatalf("expected credentials banner to contain username and temp password, got:\n%s", banner.String())
+	}
+	cfg.Server.ResetAdmin = true
+
+	// Setup status reports reset_admin_env_active=true
+	stRes, err := http.Get(ts.URL + "/admin/api/v1/setup/status")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var stBody struct {
+		Initialized         bool `json:"initialized"`
+		ResetAdminEnvActive bool `json:"reset_admin_env_active"`
+	}
+	_ = json.NewDecoder(stRes.Body).Decode(&stBody)
+	_ = stRes.Body.Close()
+	if !stBody.Initialized || !stBody.ResetAdminEnvActive {
+		t.Fatalf("unexpected setup status after reset: %+v", stBody)
+	}
+
+	// Previous session must be invalidated immediately
+	oldSessionRes := doWithCookies(http.MethodGet, "/admin/api/v1/auth/me", nil, oldCookies)
+	_ = oldSessionRes.Body.Close()
+	if oldSessionRes.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("expected old session to return 401 after reset, got %d", oldSessionRes.StatusCode)
+	}
+
+	// Old password must fail
+	oldPwdRes := doWithCookies(http.MethodPost, "/admin/api/v1/auth/login", map[string]string{
+		"username": "eagle",
+		"password": "password123",
+	}, nil)
+	_ = oldPwdRes.Body.Close()
+	if oldPwdRes.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("expected old password login to return 401, got %d", oldPwdRes.StatusCode)
+	}
+
+	// 3. Login with temporary password -> must_change_password=true
+	loginRes := doWithCookies(http.MethodPost, "/admin/api/v1/auth/login", map[string]string{
+		"username": "eagle",
+		"password": tempPass,
+	}, nil)
+	if loginRes.StatusCode != http.StatusOK {
+		t.Fatalf("temp password login status = %d", loginRes.StatusCode)
+	}
+	var loginBody struct {
+		Admin               db.Admin `json:"admin"`
+		ResetAdminEnvActive bool     `json:"reset_admin_env_active"`
+	}
+	_ = json.NewDecoder(loginRes.Body).Decode(&loginBody)
+	tempCookies := loginRes.Cookies()
+	_ = loginRes.Body.Close()
+	if !loginBody.Admin.MustChangePassword || !loginBody.ResetAdminEnvActive {
+		t.Fatalf("expected must_change_password=true and reset_admin_env_active=true, got %+v", loginBody)
+	}
+
+	// Management APIs must be blocked with 403 while must_change_password=true
+	blockedRes := doWithCookies(http.MethodGet, "/admin/api/v1/dashboard/summary", nil, tempCookies)
+	blockedBody, _ := io.ReadAll(blockedRes.Body)
+	_ = blockedRes.Body.Close()
+	if blockedRes.StatusCode != http.StatusForbidden || !strings.Contains(string(blockedBody), "password_change_required") {
+		t.Fatalf("expected 403 password_change_required, got %d: %s", blockedRes.StatusCode, string(blockedBody))
+	}
+
+	// /auth/me remains accessible so the UI can show the force-reset screen
+	meRes := doWithCookies(http.MethodGet, "/admin/api/v1/auth/me", nil, tempCookies)
+	_ = meRes.Body.Close()
+	if meRes.StatusCode != http.StatusOK {
+		t.Fatalf("expected /auth/me to return 200 during force-reset, got %d", meRes.StatusCode)
+	}
+
+	// 4. Complete forced password change without supplying old_password
+	chgRes := doWithCookies(http.MethodPut, "/admin/api/v1/auth/password", map[string]string{
+		"old_password": "",
+		"new_password": "new-strong-password-456",
+	}, tempCookies)
+	if chgRes.StatusCode != http.StatusOK {
+		b, _ := io.ReadAll(chgRes.Body)
+		t.Fatalf("force password change status = %d: %s", chgRes.StatusCode, string(b))
+	}
+	var chgBody struct {
+		Admin db.Admin `json:"admin"`
+	}
+	_ = json.NewDecoder(chgRes.Body).Decode(&chgBody)
+	newCookies := chgRes.Cookies()
+	_ = chgRes.Body.Close()
+	if chgBody.Admin.MustChangePassword {
+		t.Fatal("expected must_change_password=false after password update")
+	}
+
+	// Temp-password cookie is invalidated; new cookie accesses console normally
+	staleTempRes := doWithCookies(http.MethodGet, "/admin/api/v1/dashboard/summary", nil, tempCookies)
+	_ = staleTempRes.Body.Close()
+	if staleTempRes.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("expected stale temp cookie to return 401, got %d", staleTempRes.StatusCode)
+	}
+
+	okRes := doWithCookies(http.MethodGet, "/admin/api/v1/dashboard/summary", nil, newCookies)
+	_ = okRes.Body.Close()
+	if okRes.StatusCode != http.StatusOK {
+		t.Fatalf("expected dashboard summary 200 after password change, got %d", okRes.StatusCode)
+	}
+
+	// Temporary password no longer works; new password works
+	tempAgainRes := doWithCookies(http.MethodPost, "/admin/api/v1/auth/login", map[string]string{
+		"username": "eagle",
+		"password": tempPass,
+	}, nil)
+	_ = tempAgainRes.Body.Close()
+	if tempAgainRes.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("expected temp password to be rejected after change, got %d", tempAgainRes.StatusCode)
+	}
+}

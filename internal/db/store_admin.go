@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"os"
 	"strings"
 	"time"
 
@@ -224,9 +226,9 @@ func (s *Store) CreateAdmin(ctx context.Context, a *Admin) error {
 	}
 	a.UpdatedAt = now
 	_, err := s.db.ExecContext(ctx,
-		`INSERT INTO admins(id, username, password_hash, is_active, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?)`,
-		a.ID, a.Username, a.PasswordHash, boolToInt(a.IsActive), a.CreatedAt, a.UpdatedAt,
+		`INSERT INTO admins(id, username, password_hash, is_active, must_change_password, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		a.ID, a.Username, a.PasswordHash, boolToInt(a.IsActive), boolToInt(a.MustChangePassword), a.CreatedAt, a.UpdatedAt,
 	)
 	return err
 }
@@ -252,9 +254,9 @@ func (s *Store) CreateInitialAdminIfEmpty(ctx context.Context, a *Admin) error {
 		return ErrAlreadyInitialized
 	}
 	if _, err := tx.ExecContext(ctx,
-		`INSERT INTO admins(id, username, password_hash, is_active, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?)`,
-		a.ID, a.Username, a.PasswordHash, boolToInt(a.IsActive), a.CreatedAt, a.UpdatedAt,
+		`INSERT INTO admins(id, username, password_hash, is_active, must_change_password, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		a.ID, a.Username, a.PasswordHash, boolToInt(a.IsActive), boolToInt(a.MustChangePassword), a.CreatedAt, a.UpdatedAt,
 	); err != nil {
 		return err
 	}
@@ -263,19 +265,19 @@ func (s *Store) CreateInitialAdminIfEmpty(ctx context.Context, a *Admin) error {
 
 func (s *Store) GetAdminByUsername(ctx context.Context, username string) (*Admin, error) {
 	return scanAdmin(s.db.QueryRowContext(ctx,
-		`SELECT id, username, password_hash, is_active, last_login_at, created_at, updated_at
+		`SELECT id, username, password_hash, is_active, must_change_password, last_login_at, created_at, updated_at
 		 FROM admins WHERE username = ?`, username))
 }
 
 func (s *Store) GetAdminByID(ctx context.Context, id string) (*Admin, error) {
 	return scanAdmin(s.db.QueryRowContext(ctx,
-		`SELECT id, username, password_hash, is_active, last_login_at, created_at, updated_at
+		`SELECT id, username, password_hash, is_active, must_change_password, last_login_at, created_at, updated_at
 		 FROM admins WHERE id = ?`, id))
 }
 
 func (s *Store) ListAdmins(ctx context.Context) ([]Admin, error) {
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT id, username, password_hash, is_active, last_login_at, created_at, updated_at
+		`SELECT id, username, password_hash, is_active, must_change_password, last_login_at, created_at, updated_at
 		 FROM admins ORDER BY created_at ASC`)
 	if err != nil {
 		return nil, err
@@ -300,7 +302,7 @@ func (s *Store) UpdateAdminLogin(ctx context.Context, id string) error {
 }
 
 func (s *Store) UpdateAdminPassword(ctx context.Context, id, passwordHash string) error {
-	res, err := s.db.ExecContext(ctx, `UPDATE admins SET password_hash = ?, updated_at = ? WHERE id = ?`, passwordHash, time.Now().UTC(), id)
+	res, err := s.db.ExecContext(ctx, `UPDATE admins SET password_hash = ?, must_change_password = 0, updated_at = ? WHERE id = ?`, passwordHash, time.Now().UTC(), id)
 	if err != nil {
 		return err
 	}
@@ -308,6 +310,95 @@ func (s *Store) UpdateAdminPassword(ctx context.Context, id, passwordHash string
 		return ErrNotFound
 	}
 	return nil
+}
+
+// ResetAdminOnStartup resets an existing admin account (preferring "admin", otherwise the earliest active/created admin)
+// or initializes a new "admin" account if none exists, generating a temporary password with must_change_password=true
+// and printing it to out.
+func (s *Store) ResetAdminOnStartup(ctx context.Context, out io.Writer) (string, string, error) {
+	if out == nil {
+		out = os.Stdout
+	}
+
+	tempPassword, err := crypto.GenerateTempPassword(20)
+	if err != nil {
+		return "", "", fmt.Errorf("generate temporary admin password: %w", err)
+	}
+	passHash, err := crypto.HashPassword(tempPassword)
+	if err != nil {
+		return "", "", fmt.Errorf("hash temporary admin password: %w", err)
+	}
+
+	now := time.Now().UTC()
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return "", "", err
+	}
+	defer tx.Rollback()
+
+	var targetID, targetUsername string
+	err = tx.QueryRowContext(ctx,
+		`SELECT id, username
+		 FROM admins
+		 ORDER BY CASE WHEN username = 'admin' THEN 0 ELSE 1 END, is_active DESC, created_at ASC
+		 LIMIT 1`,
+	).Scan(&targetID, &targetUsername)
+
+	created := false
+	if err != nil {
+		if !errors.Is(err, sql.ErrNoRows) {
+			return "", "", fmt.Errorf("query admin for reset: %w", err)
+		}
+		created = true
+		targetID = crypto.NewULID()
+		targetUsername = "admin"
+		if _, err := tx.ExecContext(ctx,
+			`INSERT INTO admins(id, username, password_hash, is_active, must_change_password, created_at, updated_at)
+			 VALUES (?, ?, ?, 1, 1, ?, ?)`,
+			targetID, targetUsername, passHash, now, now,
+		); err != nil {
+			return "", "", fmt.Errorf("create temporary admin: %w", err)
+		}
+	} else {
+		if _, err := tx.ExecContext(ctx,
+			`UPDATE admins
+			 SET password_hash = ?, is_active = 1, must_change_password = 1, updated_at = ?
+			 WHERE id = ?`,
+			passHash, now, targetID,
+		); err != nil {
+			return "", "", fmt.Errorf("reset admin password: %w", err)
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return "", "", err
+	}
+
+	_ = s.InsertAuditLog(ctx, &AuditLog{
+		ActorType:    "system",
+		ActorID:      "startup",
+		ActorName:    "RESET_ADMIN",
+		Action:       "admin.password_reset",
+		ResourceType: "admin",
+		ResourceID:   targetID,
+		Status:       "success",
+		DetailJSON:   fmt.Sprintf(`{"username":%q,"created":%t}`, targetUsername, created),
+		CreatedAt:    now,
+	})
+
+	reason := "Admin Password Reset (RESET_ADMIN active)"
+	if created {
+		reason = "Initial Setup (RESET_ADMIN active)"
+	}
+	fmt.Fprintf(out, "\n========================================================================\n")
+	fmt.Fprintf(out, "  MailServer - Web UI Admin Credentials (%s)\n", reason)
+	fmt.Fprintf(out, "  Username           : %s\n", targetUsername)
+	fmt.Fprintf(out, "  Temporary Password : %s\n", tempPassword)
+	fmt.Fprintf(out, "  Action Required    : Sign in to the Web UI and set a new password.\n")
+	fmt.Fprintf(out, "                       Remove RESET_ADMIN / MAILSERVER_RESET_ADMIN after reset.\n")
+	fmt.Fprintf(out, "========================================================================\n\n")
+
+	return targetUsername, tempPassword, nil
 }
 
 func (s *Store) UpdateAdminActive(ctx context.Context, id string, active bool) error {
@@ -448,9 +539,9 @@ type rowScanner interface {
 
 func scanAdmin(row rowScanner) (*Admin, error) {
 	var a Admin
-	var isActive int
+	var isActive, mustChange int
 	var lastLogin sql.NullTime
-	err := row.Scan(&a.ID, &a.Username, &a.PasswordHash, &isActive, &lastLogin, &a.CreatedAt, &a.UpdatedAt)
+	err := row.Scan(&a.ID, &a.Username, &a.PasswordHash, &isActive, &mustChange, &lastLogin, &a.CreatedAt, &a.UpdatedAt)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, ErrNotFound
@@ -458,6 +549,7 @@ func scanAdmin(row rowScanner) (*Admin, error) {
 		return nil, err
 	}
 	a.IsActive = isActive == 1
+	a.MustChangePassword = mustChange == 1
 	if lastLogin.Valid {
 		t := lastLogin.Time
 		a.LastLoginAt = &t

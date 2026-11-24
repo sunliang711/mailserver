@@ -110,15 +110,25 @@ async function downloadFile(path: string, fallbackFilename: string, init: Reques
 }
 
 export const api = {
-  setupStatus: () => request<{ initialized: boolean; version?: string }>('/setup/status'),
+  setupStatus: () =>
+    request<{ initialized: boolean; version?: string; reset_admin_env_active?: boolean }>('/setup/status'),
   setupInit: (username: string, password: string) =>
-    request<{ admin: Admin }>('/setup/init', { method: 'POST', body: JSON.stringify({ username, password }) }),
+    request<{ admin: Admin; reset_admin_env_active?: boolean }>('/setup/init', {
+      method: 'POST',
+      body: JSON.stringify({ username, password }),
+    }),
   login: (username: string, password: string) =>
-    request<{ admin: Admin }>('/auth/login', { method: 'POST', body: JSON.stringify({ username, password }) }),
+    request<{ admin: Admin; reset_admin_env_active?: boolean }>('/auth/login', {
+      method: 'POST',
+      body: JSON.stringify({ username, password }),
+    }),
   logout: () => request('/auth/logout', { method: 'POST' }),
-  me: () => request<{ admin: Admin; version?: string }>('/auth/me'),
+  me: () => request<{ admin: Admin; version?: string; reset_admin_env_active?: boolean }>('/auth/me'),
   changePassword: (old_password: string, new_password: string) =>
-    request('/auth/password', { method: 'PUT', body: JSON.stringify({ old_password, new_password }) }),
+    request<{ status: string; admin?: Admin; reset_admin_env_active?: boolean }>('/auth/password', {
+      method: 'PUT',
+      body: JSON.stringify({ old_password, new_password }),
+    }),
 
   dashboard: () => request<DashboardSummary>('/dashboard/summary'),
 

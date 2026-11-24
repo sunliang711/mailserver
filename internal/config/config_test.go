@@ -79,3 +79,31 @@ func TestNormalizeBasePath(t *testing.T) {
 		}
 	}
 }
+
+func TestResetAdminPrecedence(t *testing.T) {
+	t.Setenv("RESET_ADMIN", "true")
+	cfg, err := Load("", nil)
+	if err != nil {
+		t.Fatalf("Load with RESET_ADMIN: %v", err)
+	}
+	if !cfg.Server.ResetAdmin {
+		t.Fatal("expected ResetAdmin=true when RESET_ADMIN=true")
+	}
+
+	t.Setenv("MAILSERVER_RESET_ADMIN", "false")
+	cfg, err = Load("", nil)
+	if err != nil {
+		t.Fatalf("Load with MAILSERVER_RESET_ADMIN override: %v", err)
+	}
+	if cfg.Server.ResetAdmin {
+		t.Fatal("expected MAILSERVER_RESET_ADMIN=false to override RESET_ADMIN=true")
+	}
+
+	cfg, err = Load("", map[string]string{"reset-admin": "true"})
+	if err != nil {
+		t.Fatalf("Load with CLI override: %v", err)
+	}
+	if !cfg.Server.ResetAdmin {
+		t.Fatal("expected CLI reset-admin=true override to win")
+	}
+}

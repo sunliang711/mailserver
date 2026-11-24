@@ -112,12 +112,16 @@ func RegisterRoutes(engine *gin.Engine, mailHandler *handler.MailHandler, s *Adm
 		admin.POST("/auth/login", s.handleAdminLogin)
 		admin.POST("/auth/logout", s.handleAdminLogout)
 
-		authed := admin.Group("")
-		authed.Use(s.adminAuthMiddleware())
+		sessionAuthed := admin.Group("")
+		sessionAuthed.Use(s.adminAuthMiddleware(true))
 		{
-			authed.GET("/auth/me", s.handleAdminMe)
-			authed.PUT("/auth/password", s.handleAdminChangePassword)
+			sessionAuthed.GET("/auth/me", s.handleAdminMe)
+			sessionAuthed.PUT("/auth/password", s.handleAdminChangePassword)
+		}
 
+		authed := admin.Group("")
+		authed.Use(s.adminAuthMiddleware(false))
+		{
 			authed.GET("/dashboard/summary", s.handleDashboardSummary)
 
 			authed.GET("/mail-logs", s.handleListMailLogs)
@@ -315,7 +319,7 @@ func (s *AdminServer) corsMiddleware() gin.HandlerFunc {
 	}
 }
 
-func (s *AdminServer) adminAuthMiddleware() gin.HandlerFunc {
+func (s *AdminServer) adminAuthMiddleware(allowMustChange bool) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var tokStr string
 		if ck, err := c.Cookie(adminCookieName); err == nil {
@@ -354,6 +358,11 @@ func (s *AdminServer) adminAuthMiddleware() gin.HandlerFunc {
 		pwdV, _ := claims["pwd_v"].(string)
 		if pwdV != passwordVersion(admin.PasswordHash) {
 			writeError(c, http.StatusUnauthorized, "session_revoked", "session revoked due to credential change")
+			c.Abort()
+			return
+		}
+		if !allowMustChange && admin.MustChangePassword {
+			writeError(c, http.StatusForbidden, "password_change_required", "admin password change required before accessing management console")
 			c.Abort()
 			return
 		}

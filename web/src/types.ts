@@ -2,6 +2,7 @@ export interface Admin {
   id: string
   username: string
   is_active: boolean
+  must_change_password?: boolean
   last_login_at?: string
   created_at: string
   updated_at: string

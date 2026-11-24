@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"io/fs"
+	"os"
 	"path/filepath"
 
 	"github.com/sunliang711/mailserver/internal/audit"
@@ -114,6 +115,12 @@ func newStore(cfg *config.Config, cipher *crypto.Cipher) (*db.Store, error) {
 	if err := store.SeedSMTPFromConfigIfEmpty(context.Background(), cipher, cfg.Email); err != nil {
 		_ = store.Close()
 		return nil, err
+	}
+	if cfg.Server.ResetAdmin {
+		if _, _, err := store.ResetAdminOnStartup(context.Background(), os.Stdout); err != nil {
+			_ = store.Close()
+			return nil, err
+		}
 	}
 	return store, nil
 }

@@ -8,7 +8,7 @@ import { useToast } from './Toast'
 
 interface Props {
   defaultUsername: string
-  onSuccess: (admin: Admin) => void
+  onSuccess: (admin: Admin, resetAdminEnvActive?: boolean) => void
   onDismiss: () => void
   onLogout: () => void
 }
@@ -29,7 +29,7 @@ export const SessionExpiredModal: React.FC<Props> = ({ defaultUsername, onSucces
     try {
       const res = await api.login(username.trim(), password)
       toast.success(t('auth.reloginSuccess'))
-      onSuccess(res.admin)
+      onSuccess(res.admin, res.reset_admin_env_active)
     } catch (err: any) {
       setError(err.message === 'invalid username or password' ? t('auth.invalidCredentials') : err.message || t('auth.actionFailed'))
     } finally {

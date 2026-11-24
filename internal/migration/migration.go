@@ -78,13 +78,14 @@ type ClientRecord struct {
 }
 
 type AdminRecord struct {
-	ID           string     `json:"id"`
-	Username     string     `json:"username"`
-	PasswordHash string     `json:"password_hash"`
-	IsActive     bool       `json:"is_active"`
-	LastLoginAt  *time.Time `json:"last_login_at,omitempty"`
-	CreatedAt    time.Time  `json:"created_at"`
-	UpdatedAt    time.Time  `json:"updated_at"`
+	ID                 string     `json:"id"`
+	Username           string     `json:"username"`
+	PasswordHash       string     `json:"password_hash"`
+	IsActive           bool       `json:"is_active"`
+	MustChangePassword bool       `json:"must_change_password,omitempty"`
+	LastLoginAt        *time.Time `json:"last_login_at,omitempty"`
+	CreatedAt          time.Time  `json:"created_at"`
+	UpdatedAt          time.Time  `json:"updated_at"`
 }
 
 type InspectSummary struct {
@@ -204,13 +205,14 @@ func (s *Service) Export(ctx context.Context, opts ExportOptions) ([]byte, error
 		}
 		for _, a := range admins {
 			data.Admins = append(data.Admins, AdminRecord{
-				ID:           a.ID,
-				Username:     a.Username,
-				PasswordHash: a.PasswordHash,
-				IsActive:     a.IsActive,
-				LastLoginAt:  a.LastLoginAt,
-				CreatedAt:    a.CreatedAt,
-				UpdatedAt:    a.UpdatedAt,
+				ID:                 a.ID,
+				Username:           a.Username,
+				PasswordHash:       a.PasswordHash,
+				IsActive:           a.IsActive,
+				MustChangePassword: a.MustChangePassword,
+				LastLoginAt:        a.LastLoginAt,
+				CreatedAt:          a.CreatedAt,
+				UpdatedAt:          a.UpdatedAt,
 			})
 		}
 	}
@@ -520,10 +522,10 @@ func (s *Service) Import(ctx context.Context, encrypted []byte, opts ImportOptio
 				targetID = existingByUser
 			}
 			if _, err := tx.ExecContext(ctx,
-				`INSERT INTO admins(id, username, password_hash, is_active, last_login_at, created_at, updated_at)
-				 VALUES (?, ?, ?, ?, ?, ?, ?)
-				 ON CONFLICT(id) DO UPDATE SET username=excluded.username, password_hash=excluded.password_hash, is_active=excluded.is_active, updated_at=excluded.updated_at`,
-				targetID, a.Username, a.PasswordHash, boolInt(a.IsActive), a.LastLoginAt, a.CreatedAt, a.UpdatedAt,
+				`INSERT INTO admins(id, username, password_hash, is_active, must_change_password, last_login_at, created_at, updated_at)
+				 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+				 ON CONFLICT(id) DO UPDATE SET username=excluded.username, password_hash=excluded.password_hash, is_active=excluded.is_active, must_change_password=excluded.must_change_password, updated_at=excluded.updated_at`,
+				targetID, a.Username, a.PasswordHash, boolInt(a.IsActive), boolInt(a.MustChangePassword), a.LastLoginAt, a.CreatedAt, a.UpdatedAt,
 			); err != nil {
 				return nil, err
 			}

@@ -75,6 +75,8 @@ job "mailserver" {
         # MAILSERVER_BASE_PATH     = "/api/mail"
         # 可选：额外允许跨域的 Origin 白名单（多个用英文逗号分隔）
         # MAILSERVER_CORS_ORIGINS  = "http://192.168.1.10:8100"
+        # 仅在忘记管理员密码需要重置时临时设为 "true"，重置并设置新密码后请改回 "false"：
+        RESET_ADMIN                = "false"
 
         # --- 可选：HTTPS / TLS 配置（与 config.yaml 共同作为启动引导配置）---
         # MAILSERVER_TLS_ENABLE    = "true"

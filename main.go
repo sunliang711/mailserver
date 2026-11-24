@@ -15,6 +15,7 @@ func main() {
 	dataDir := flag.String("data-dir", "", "override data directory (default ./data)")
 	masterKey := flag.String("master-key", "", "override 32-byte master key (64 hex chars or base64)")
 	basePath := flag.String("base-path", "", "override URL base path prefix (e.g. /api/mail)")
+	resetAdmin := flag.Bool("reset-admin", false, "reset admin password to a temporary password on startup")
 	flag.Parse()
 
 	overrides := map[string]string{}
@@ -29,6 +30,9 @@ func main() {
 	}
 	if *basePath != "" {
 		overrides["base-path"] = *basePath
+	}
+	if *resetAdmin {
+		overrides["reset-admin"] = "true"
 	}
 
 	if *configPath == "" && len(overrides) == 0 && len(os.Args) == 1 {

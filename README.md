@@ -40,6 +40,7 @@ tls:
 - `MAILSERVER_CORS_ORIGINS`：额外允许的跨域 Origin（逗号分隔）
 - `MAILSERVER_BASE_PATH`：反向代理子路径前缀（如挂载在 `/api/mail` 时设为 `/api/mail`，也可通过反代请求头 `X-Forwarded-Prefix` 传递）
 - `MAILSERVER_PUBLIC_BASE_URL`：对外访问地址默认值
+- `MAILSERVER_RESET_ADMIN` / `RESET_ADMIN`：设为 `true` 启动时将为管理员账号生成一次性随机临时密码并打印到启动日志（同时使旧会话失效，登录后强制重设新密码；完成重置后请及时移除该环境变量）
 
 > 注意：`auth_key` 不在 `config.yaml` 中配置，请在启动后通过 Web UI 的「客户端与密钥」页面创建。
 
@@ -56,6 +57,16 @@ make build
 ```
 
 启动后访问 `http://localhost:3000` 完成首次管理员初始化，然后在「系统设置」配置 SMTP 服务器，并在「客户端与密钥」创建客户端生成 `auth_key`。
+
+### 忘记管理员密码重置
+
+如果忘记了管理员密码，可以临时开启 `RESET_ADMIN=true`（或 `MAILSERVER_RESET_ADMIN=true`，或使用 `--reset-admin` 启动参数）重启服务：
+
+```bash
+RESET_ADMIN=true ./mailserver
+```
+
+服务启动时会在控制台日志打印临时密码与目标用户名（旧会话将立即失效）。使用临时密码登录 Web 控制台后，系统会强制要求设置新密码；完成改密后请移除 `RESET_ADMIN` / `MAILSERVER_RESET_ADMIN` 并恢复正常启动，以免下次重启再次重置。
 
 ### 方式二：Docker Compose
 

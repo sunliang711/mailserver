@@ -195,6 +195,23 @@ func VerifyPassword(hash, password string) bool {
 	return bcrypt.CompareHashAndPassword([]byte(hash), []byte(password)) == nil
 }
 
+// GenerateTempPassword generates an unambiguous temporary admin password prefixed with "adm_".
+func GenerateTempPassword(length int) (string, error) {
+	if length <= 0 {
+		length = 20
+	}
+	const alphabet = "abcdefghijkmnopqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+	b := make([]byte, length)
+	if _, err := io.ReadFull(rand.Reader, b); err != nil {
+		return "", err
+	}
+	out := make([]byte, length)
+	for i := range b {
+		out[i] = alphabet[int(b[i])%len(alphabet)]
+	}
+	return "adm_" + string(out), nil
+}
+
 // RandomToken returns a URL-safe random hex token of n bytes.
 func RandomToken(nBytes int) (string, error) {
 	buf := make([]byte, nBytes)

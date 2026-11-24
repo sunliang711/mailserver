@@ -41,6 +41,7 @@ type ServerConfig struct {
 	MasterKey          string   `yaml:"master_key"`
 	BasePath           string   `yaml:"base_path"`
 	CORSAllowedOrigins []string `yaml:"cors_allowed_origins"`
+	ResetAdmin         bool     `yaml:"reset_admin"`
 }
 
 type TLSConfig struct {
@@ -129,6 +130,7 @@ func Load(explicitConfigPath string, cliOverrides map[string]string) (*Config, e
 			if len(fileCfg.Server.CORSAllowedOrigins) > 0 {
 				cfg.CORSAllowedOrigins = append(cfg.CORSAllowedOrigins, fileCfg.Server.CORSAllowedOrigins...)
 			}
+			cfg.Server.ResetAdmin = fileCfg.Server.ResetAdmin
 			cfg.TLS = fileCfg.TLS
 			cfg.Email = fileCfg.Email
 		}
@@ -163,6 +165,15 @@ func Load(explicitConfigPath string, cliOverrides map[string]string) (*Config, e
 	if v, ok := os.LookupEnv("MAILSERVER_TLS_KEY"); ok && strings.TrimSpace(v) != "" {
 		cfg.TLS.Key = strings.TrimSpace(v)
 	}
+	if v, ok := os.LookupEnv("reset_admin"); ok && strings.TrimSpace(v) != "" {
+		cfg.Server.ResetAdmin = parseBool(v)
+	}
+	if v, ok := os.LookupEnv("RESET_ADMIN"); ok && strings.TrimSpace(v) != "" {
+		cfg.Server.ResetAdmin = parseBool(v)
+	}
+	if v, ok := os.LookupEnv("MAILSERVER_RESET_ADMIN"); ok && strings.TrimSpace(v) != "" {
+		cfg.Server.ResetAdmin = parseBool(v)
+	}
 
 	// CLI flag overrides
 	if v, ok := cliOverrides["port"]; ok && strings.TrimSpace(v) != "" {
@@ -180,6 +191,9 @@ func Load(explicitConfigPath string, cliOverrides map[string]string) (*Config, e
 	}
 	if v, ok := cliOverrides["base-path"]; ok {
 		cfg.Server.BasePath = NormalizeBasePath(v)
+	}
+	if v, ok := cliOverrides["reset-admin"]; ok && strings.TrimSpace(v) != "" {
+		cfg.Server.ResetAdmin = parseBool(v)
 	}
 
 	cfg.Defaults = DefaultSystemSettings(cfg.Server.Port, cfg.TLS.Enable)
