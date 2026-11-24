@@ -78,7 +78,6 @@ export const en: Record<TranslationKey, string> = {
   'app.skipToContent': 'Skip to content',
   'app.roleAdmin': 'Administrator',
   'app.workspace': 'Console',
-  'app.console': 'MailServer Admin',
   'app.footerLeft': 'MailServer {version} · Embedded Single-Binary Console',
   'app.footerRight': 'SMTP Delivery · Multi-Client Auth · Audit & Migration',
 

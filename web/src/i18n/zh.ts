@@ -76,7 +76,6 @@ export const zh = {
   'app.skipToContent': '跳转到正文',
   'app.roleAdmin': '系统管理员',
   'app.workspace': '控制台',
-  'app.console': 'MailServer 管理台',
   'app.footerLeft': 'MailServer {version} · 单二进制内置管理台',
   'app.footerRight': 'SMTP 发信 · 多客户端鉴权 · 审计与迁移',
 
