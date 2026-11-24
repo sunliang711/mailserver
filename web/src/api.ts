@@ -18,6 +18,27 @@ function apiBase(): string {
   return withBasePath('/admin/api/v1')
 }
 
+type ReauthHandler = () => Promise<boolean>
+
+const PUBLIC_AUTH_PATHS = new Set(['/setup/status', '/setup/init', '/auth/login', '/auth/logout'])
+
+let reauthHandler: ReauthHandler | null = null
+let pendingReauth: Promise<boolean> | null = null
+
+export function setReauthHandler(handler: ReauthHandler | null) {
+  reauthHandler = handler
+}
+
+function triggerReauth(): Promise<boolean> {
+  if (!reauthHandler) return Promise.resolve(false)
+  if (!pendingReauth) {
+    pendingReauth = reauthHandler().finally(() => {
+      pendingReauth = null
+    })
+  }
+  return pendingReauth
+}
+
 export class ApiError extends Error {
   status: number
   code: string
@@ -28,7 +49,22 @@ export class ApiError extends Error {
   }
 }
 
-async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
+async function parseApiError(res: Response): Promise<ApiError> {
+  let code = 'http_error'
+  let msg = res.statusText
+  try {
+    const data = await res.json()
+    if (data?.error) {
+      code = data.error.code || code
+      msg = data.error.message || msg
+    }
+  } catch {
+    // ignore non-JSON error
+  }
+  return new ApiError(res.status, code, msg)
+}
+
+async function fetchAdmin(path: string, init: RequestInit = {}, retryOn401 = true): Promise<Response> {
   const isForm = init.body instanceof FormData
   const headers: Record<string, string> = isForm ? {} : { 'Content-Type': 'application/json' }
   const res = await fetch(`${apiBase()}${path}`, {
@@ -36,21 +72,41 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
     credentials: 'include',
     headers: { ...headers, ...(init.headers as Record<string, string> | undefined) },
   })
-  if (!res.ok) {
-    let code = 'http_error'
-    let msg = res.statusText
-    try {
-      const data = await res.json()
-      if (data?.error) {
-        code = data.error.code || code
-        msg = data.error.message || msg
-      }
-    } catch {
-      // ignore non-JSON error
+  const cleanPath = path.split('?')[0]
+  if (res.status === 401 && retryOn401 && reauthHandler && !PUBLIC_AUTH_PATHS.has(cleanPath)) {
+    const ok = await triggerReauth()
+    if (ok) {
+      return fetchAdmin(path, init, false)
     }
-    throw new ApiError(res.status, code, msg)
+  }
+  return res
+}
+
+async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const res = await fetchAdmin(path, init)
+  if (!res.ok) {
+    throw await parseApiError(res)
   }
   return res.json() as Promise<T>
+}
+
+async function downloadFile(path: string, fallbackFilename: string, init: RequestInit = {}): Promise<void> {
+  const res = await fetchAdmin(path, init)
+  if (!res.ok) {
+    throw await parseApiError(res)
+  }
+  const blob = await res.blob()
+  const cd = res.headers.get('Content-Disposition') || ''
+  const match = cd.match(/filename="([^"]+)"/)
+  const filename = match ? match[1] : fallbackFilename
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+  URL.revokeObjectURL(url)
 }
 
 export const api = {
@@ -71,9 +127,9 @@ export const api = {
     return request<{ items: MailLog[]; total: number }>(`/mail-logs${qs ? '?' + qs : ''}`)
   },
   getMailLog: (id: string) => request<MailLog>(`/mail-logs/${encodeURIComponent(id)}`),
-  exportMailLogsUrl: (params: Record<string, string>, format: 'csv' | 'json') => {
+  exportMailLogs: (params: Record<string, string>, format: 'csv' | 'json') => {
     const qs = new URLSearchParams({ ...params, format }).toString()
-    return `${apiBase()}/mail-logs/export?${qs}`
+    return downloadFile(`/mail-logs/export?${qs}`, `mail-logs.${format}`)
   },
   testSendMail: (payload: { to: string; subject: string; body: string }) =>
     request<{ status: string }>('/mail/test-send', { method: 'POST', body: JSON.stringify(payload) }),
@@ -126,9 +182,9 @@ export const api = {
     const qs = new URLSearchParams(params).toString()
     return request<{ items: AuditLog[]; total: number }>(`/audit-logs${qs ? '?' + qs : ''}`)
   },
-  exportAuditUrl: (params: Record<string, string>, format: 'csv' | 'json') => {
+  exportAudit: (params: Record<string, string>, format: 'csv' | 'json') => {
     const qs = new URLSearchParams({ ...params, format }).toString()
-    return `${apiBase()}/audit-logs/export?${qs}`
+    return downloadFile(`/audit-logs/export?${qs}`, `audit-logs.${format}`)
   },
 
   getSettings: () => request<SystemSettings>('/settings'),
@@ -160,41 +216,16 @@ export const api = {
   updateAdmin: (id: string, payload: { is_active?: boolean; password?: string }) =>
     request<Admin>(`/admins/${encodeURIComponent(id)}`, { method: 'PUT', body: JSON.stringify(payload) }),
 
-  exportMigration: async (payload: {
+  exportMigration: (payload: {
     include_mail_logs: boolean
     include_admins: boolean
     include_audit_logs: boolean
     passphrase: string
-  }) => {
-    const res = await fetch(`${apiBase()}/migration/export`, {
+  }) =>
+    downloadFile('/migration/export', 'mailserver-migration.msbundle', {
       method: 'POST',
-      credentials: 'include',
-      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
-    })
-    if (!res.ok) {
-      let msg = res.statusText
-      try {
-        const d = await res.json()
-        msg = d?.error?.message || msg
-      } catch {
-        // ignore
-      }
-      throw new Error(msg)
-    }
-    const blob = await res.blob()
-    const cd = res.headers.get('Content-Disposition') || ''
-    const match = cd.match(/filename="([^"]+)"/)
-    const filename = match ? match[1] : 'mailserver-migration.msbundle'
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = filename
-    document.body.appendChild(a)
-    a.click()
-    a.remove()
-    URL.revokeObjectURL(url)
-  },
+    }),
 
   inspectMigration: (formData: FormData) =>
     request<InspectSummary>('/migration/inspect', { method: 'POST', body: formData }),

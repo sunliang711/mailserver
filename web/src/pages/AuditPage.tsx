@@ -4,6 +4,7 @@ import { api, formatTime } from '../api'
 import { StatusBadge } from '../components/Badge'
 import { EmptyState, LoadingState } from '../components/Feedback'
 import { Modal } from '../components/Modal'
+import { useToast } from '../components/Toast'
 import { useI18n } from '../contexts/I18nContext'
 import type { AuditLog } from '../types'
 
@@ -32,6 +33,7 @@ const ACTIONS = [
 ]
 
 export const AuditPage: React.FC = () => {
+  const toast = useToast()
   const { t, lang } = useI18n()
   const [logs, setLogs] = useState<AuditLog[]>([])
   const [loading, setLoading] = useState(true)
@@ -67,6 +69,8 @@ export const AuditPage: React.FC = () => {
       if (reqSeq.current !== seq) return
       setLogs(res.items || [])
       setTotal(res.total || 0)
+    } catch (e: any) {
+      if (reqSeq.current === seq) toast.error(e.message)
     } finally {
       if (reqSeq.current === seq) setLoading(false)
     }
@@ -84,6 +88,14 @@ export const AuditPage: React.FC = () => {
 
   const exportParams = buildParams(false)
 
+  const handleExport = async (format: 'csv' | 'json') => {
+    try {
+      await api.exportAudit(exportParams, format)
+    } catch (e: any) {
+      toast.error(e.message)
+    }
+  }
+
   return (
     <div className="space-y-5">
       <div className="flex items-center justify-between gap-3 flex-wrap">
@@ -92,18 +104,20 @@ export const AuditPage: React.FC = () => {
           <p className="text-sm text-slate-500 dark:text-slate-400">{t('audit.subtitle')}</p>
         </div>
         <div className="flex items-center gap-2">
-          <a
-            href={api.exportAuditUrl(exportParams, 'csv')}
+          <button
+            type="button"
+            onClick={() => handleExport('csv')}
             className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700"
           >
             <Download className="w-3.5 h-3.5" /> {t('common.exportCSV')}
-          </a>
-          <a
-            href={api.exportAuditUrl(exportParams, 'json')}
+          </button>
+          <button
+            type="button"
+            onClick={() => handleExport('json')}
             className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700"
           >
             <Download className="w-3.5 h-3.5" /> {t('common.exportJSON')}
-          </a>
+          </button>
         </div>
       </div>
 

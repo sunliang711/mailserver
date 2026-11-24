@@ -1,7 +1,8 @@
-import React, { useEffect, useState } from 'react'
-import { api } from './api'
+import React, { useEffect, useRef, useState } from 'react'
+import { api, setReauthHandler } from './api'
 import { LoadingState } from './components/Feedback'
 import { Layout, type NavTab } from './components/Layout'
+import { SessionExpiredModal } from './components/SessionExpiredModal'
 import { ToastProvider } from './components/Toast'
 import { useI18n } from './contexts/I18nContext'
 import { AuditPage } from './pages/AuditPage'
@@ -36,8 +37,11 @@ export function App() {
   const [bootFailed, setBootFailed] = useState(false)
   const [initialized, setInitialized] = useState(true)
   const [admin, setAdmin] = useState<Admin | null>(null)
+  const [sessionExpired, setSessionExpired] = useState(false)
   const [version, setVersion] = useState('dev')
   const [tab, setTab] = useState<NavTab>(initialTab())
+  const reauthResolverRef = useRef<((ok: boolean) => void) | null>(null)
+  const isAuthenticated = Boolean(admin)
 
   useEffect(() => {
     const onPopState = () => setTab(initialTab())
@@ -64,6 +68,56 @@ export function App() {
     })()
     return () => window.removeEventListener('popstate', onPopState)
   }, [])
+
+  useEffect(() => {
+    if (!isAuthenticated) return
+    setReauthHandler(() => {
+      if (reauthResolverRef.current) {
+        reauthResolverRef.current(false)
+      }
+      setSessionExpired(true)
+      return new Promise<boolean>((resolve) => {
+        reauthResolverRef.current = resolve
+      })
+    })
+    return () => {
+      setReauthHandler(null)
+      setSessionExpired(false)
+      const resolve = reauthResolverRef.current
+      reauthResolverRef.current = null
+      resolve?.(false)
+    }
+  }, [isAuthenticated])
+
+  const handleReauthSuccess = (nextAdmin: Admin) => {
+    setAdmin(nextAdmin)
+    setSessionExpired(false)
+    const resolve = reauthResolverRef.current
+    reauthResolverRef.current = null
+    resolve?.(true)
+  }
+
+  const handleReauthDismiss = () => {
+    setSessionExpired(false)
+    const resolve = reauthResolverRef.current
+    reauthResolverRef.current = null
+    resolve?.(false)
+  }
+
+  const handleLogout = async () => {
+    setSessionExpired(false)
+    const resolve = reauthResolverRef.current
+    reauthResolverRef.current = null
+    resolve?.(false)
+    setReauthHandler(null)
+    try {
+      await api.logout()
+    } catch {
+      // ignore network/session errors during logout
+    } finally {
+      setAdmin(null)
+    }
+  }
 
   const navigate = (next: NavTab) => {
     if (next === tab) return
@@ -118,10 +172,7 @@ export function App() {
         onNavigate={navigate}
         admin={admin}
         version={version}
-        onLogout={async () => {
-          await api.logout()
-          setAdmin(null)
-        }}
+        onLogout={handleLogout}
       >
         {tab === 'dashboard' && <DashboardPage onNavigate={navigate} />}
         {tab === 'mail-logs' && <MailLogsPage />}
@@ -131,6 +182,14 @@ export function App() {
         {tab === 'migration' && <MigrationPage />}
         {tab === 'settings' && <SettingsPage />}
       </Layout>
+      {sessionExpired && (
+        <SessionExpiredModal
+          defaultUsername={admin.username}
+          onSuccess={handleReauthSuccess}
+          onDismiss={handleReauthDismiss}
+          onLogout={handleLogout}
+        />
+      )}
     </ToastProvider>
   )
 }

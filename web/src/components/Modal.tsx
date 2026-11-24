@@ -9,10 +9,11 @@ interface Props {
   busy?: boolean
   dismissible?: boolean
   size?: 'md' | 'lg' | 'xl' | '2xl'
+  zIndexClass?: string
   children: React.ReactNode
 }
 
-export function Modal({ title, onClose, busy = false, dismissible = true, size = 'lg', children }: Props) {
+export function Modal({ title, onClose, busy = false, dismissible = true, size = 'lg', zIndexClass = '', children }: Props) {
   const { t } = useI18n()
   const root = useRef<HTMLDivElement>(null)
   const close = useRef(onClose)
@@ -27,9 +28,13 @@ export function Modal({ title, onClose, busy = false, dismissible = true, size =
     const focusable = () => Array.from(root.current?.querySelectorAll<HTMLElement>(
       'button:not(:disabled), a[href], input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex="0"]'
     ) || []).filter((el) => el.getClientRects().length > 0)
-    const first = root.current?.querySelector<HTMLElement>('input:not(:disabled), select:not(:disabled), textarea:not(:disabled)')
-    ;(first || focusable()[0] || root.current)?.focus()
+    if (!root.current?.contains(document.activeElement)) {
+      const first = root.current?.querySelector<HTMLElement>('input:not(:disabled), select:not(:disabled), textarea:not(:disabled)')
+      ;(first || focusable()[0] || root.current)?.focus()
+    }
     const onKeyDown = (event: KeyboardEvent) => {
+      const dialogs = document.querySelectorAll('[role="dialog"][aria-modal="true"]')
+      if (dialogs.length > 0 && dialogs[dialogs.length - 1] !== root.current) return
       if (event.key === 'Escape' && !blocked.current) {
         event.preventDefault()
         event.stopPropagation()
@@ -60,7 +65,7 @@ export function Modal({ title, onClose, busy = false, dismissible = true, size =
   }, [])
 
   return createPortal(
-    <div className="modal-backdrop" onClick={(event) => {
+    <div className={`modal-backdrop ${zIndexClass}`.trim()} onClick={(event) => {
       if (event.target === event.currentTarget && dismissible && !busy) onClose()
     }}>
       <div ref={root} role="dialog" aria-modal="true" aria-label={title} aria-busy={busy} tabIndex={-1} className={`modal-container ${size === 'md' ? 'max-w-md' : size === 'xl' ? 'max-w-3xl' : size === '2xl' ? 'max-w-5xl' : 'max-w-2xl'}`}>

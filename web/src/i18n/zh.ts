@@ -120,6 +120,11 @@ export const zh = {
   'auth.setupBtn': '完成初始化并进入控制台',
   'auth.loginBtn': '登录控制台',
   'auth.submitting': '处理中…',
+  'auth.sessionExpiredTitle': '登录已过期',
+  'auth.sessionExpiredDesc': '当前会话已失效，请重新登录以继续操作，当前页面内容将保留。',
+  'auth.reloginBtn': '重新登录',
+  'auth.logoutToLogin': '退出到登录页',
+  'auth.reloginSuccess': '登录状态已恢复',
 
   // Dashboard
   'dashboard.title': '概览仪表盘',

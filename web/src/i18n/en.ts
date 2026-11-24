@@ -122,6 +122,11 @@ export const en: Record<TranslationKey, string> = {
   'auth.setupBtn': 'Complete Setup',
   'auth.loginBtn': 'Sign In',
   'auth.submitting': 'Processing…',
+  'auth.sessionExpiredTitle': 'Session Expired',
+  'auth.sessionExpiredDesc': 'Your session has expired. Sign in again to continue without losing your current page state.',
+  'auth.reloginBtn': 'Sign In Again',
+  'auth.logoutToLogin': 'Sign Out',
+  'auth.reloginSuccess': 'Session restored',
 
   // Dashboard
   'dashboard.title': 'Dashboard',

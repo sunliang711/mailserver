@@ -51,6 +51,8 @@ export function Drawer({
     ;(focusable()[0] || root.current)?.focus()
 
     const onKeyDown = (event: KeyboardEvent) => {
+      const dialogs = document.querySelectorAll('[role="dialog"][aria-modal="true"]')
+      if (dialogs.length > 0 && dialogs[dialogs.length - 1] !== root.current) return
       if (event.key === 'Escape' && !blocked.current) {
         event.preventDefault()
         event.stopPropagation()

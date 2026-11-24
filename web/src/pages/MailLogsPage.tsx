@@ -88,6 +88,14 @@ export const MailLogsPage: React.FC = () => {
 
   const exportParams = buildParams(false)
 
+  const handleExport = async (format: 'csv' | 'json') => {
+    try {
+      await api.exportMailLogs(exportParams, format)
+    } catch (e: any) {
+      toast.error(e.message)
+    }
+  }
+
   return (
     <div className="space-y-5">
       <div className="flex items-center justify-between gap-3 flex-wrap">
@@ -96,18 +104,20 @@ export const MailLogsPage: React.FC = () => {
           <p className="text-sm text-slate-500 dark:text-slate-400">{t('mailLogs.subtitle')}</p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
-          <a
-            href={api.exportMailLogsUrl(exportParams, 'csv')}
+          <button
+            type="button"
+            onClick={() => handleExport('csv')}
             className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700"
           >
             <Download className="w-3.5 h-3.5" /> {t('common.exportCSV')}
-          </a>
-          <a
-            href={api.exportMailLogsUrl(exportParams, 'json')}
+          </button>
+          <button
+            type="button"
+            onClick={() => handleExport('json')}
             className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700"
           >
             <Download className="w-3.5 h-3.5" /> {t('common.exportJSON')}
-          </a>
+          </button>
           <button type="button" onClick={() => setTestOpen(true)} className="primary-button">
             <Send className="w-4 h-4" />
             {t('mailLogs.testSendBtn')}
