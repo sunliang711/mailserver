@@ -16,33 +16,16 @@ interface PresetOption {
   value: string
 }
 
-const BASE_PRESETS: PresetOption[] = [
+const SCHEDULE_PRESETS: PresetOption[] = [
+  { labelKey: 'cron.preset.every1m', value: '* * * * *' },
+  { labelKey: 'cron.preset.every5m', value: '*/5 * * * *' },
+  { labelKey: 'cron.preset.every10m', value: '*/10 * * * *' },
   { labelKey: 'cron.preset.hourly', value: '0 * * * *' },
-  { labelKey: 'cron.preset.daily', value: '0 4 * * *' },
-  { labelKey: 'cron.preset.weekly', value: '0 5 * * 1' },
-  { labelKey: 'cron.preset.monthly', value: '0 4 1 * *' },
+  { labelKey: 'cron.preset.daily', value: '0 0 * * *' },
+  { labelKey: 'cron.preset.weekly', value: '0 0 * * 1' },
+  { labelKey: 'cron.preset.monthly', value: '0 0 1 * *' },
   { labelKey: 'cron.preset.custom', value: 'custom' },
 ]
-
-function getPlanPresets(jobKey?: string): PresetOption[] {
-  let extra: PresetOption[] = []
-  switch (jobKey) {
-    case 'cleanup_audit_logs':
-      extra = [{ labelKey: 'cron.preset.daily02', value: '0 2 * * *' }]
-      break
-    case 'cleanup_mail_records':
-      extra = [{ labelKey: 'cron.preset.daily03', value: '0 3 * * *' }]
-      break
-    case 'smtp_health_check':
-      extra = [
-        { labelKey: 'cron.preset.every15m', value: '*/15 * * * *' },
-        { labelKey: 'cron.preset.every30m', value: '*/30 * * * *' },
-      ]
-      break
-  }
-  const seen = new Set(extra.map((item) => item.value))
-  return [...extra, ...BASE_PRESETS.filter((item) => !seen.has(item.value))]
-}
 
 const JOB_I18N: Record<string, { name: TranslationKey; desc: TranslationKey }> = {
   cleanup_audit_logs: { name: 'cron.job.cleanup_audit_logs.name', desc: 'cron.job.cleanup_audit_logs.desc' },
@@ -205,11 +188,8 @@ export const CronPage: React.FC = () => {
     load()
   }, [])
 
-  const planPresets = useMemo(() => getPlanPresets(editing?.job_key), [editing?.job_key])
-
   const openEdit = (job: CronJob, overrideEnabled?: boolean) => {
-    const presets = getPlanPresets(job.job_key)
-    const matched = presets.find((item) => item.value === job.cron_expr)?.value ?? 'custom'
+    const matched = SCHEDULE_PRESETS.find((item) => item.value === job.cron_expr)?.value ?? 'custom'
     const parsedParams = parseStructuredParams(job)
     const nextEnabled = overrideEnabled ?? job.enabled
     const nextTimeout = job.timeout_sec > 0 ? job.timeout_sec : 300
@@ -617,7 +597,7 @@ export const CronPage: React.FC = () => {
                 }}
                 className="w-full px-3 py-2 text-xs border rounded-lg bg-white dark:bg-slate-900"
               >
-                {planPresets.map((opt) => (
+                {SCHEDULE_PRESETS.map((opt) => (
                   <option key={opt.value} value={opt.value}>
                     {opt.value === 'custom' ? t(opt.labelKey) : `${t(opt.labelKey)} (${opt.value})`}
                   </option>
