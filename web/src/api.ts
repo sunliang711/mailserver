@@ -2,6 +2,7 @@ import { getCurrentLang, translate } from './contexts/I18nContext'
 import { withBasePath } from './utils/basePath'
 import type {
   Admin,
+  AdminSession,
   AuditLog,
   Client,
   CronJob,
@@ -221,10 +222,12 @@ export const api = {
   }),
 
   listAdmins: () => request<{ items: Admin[] }>('/admins'),
-  createAdmin: (username: string, password: string) =>
-    request<Admin>('/admins', { method: 'POST', body: JSON.stringify({ username, password }) }),
-  updateAdmin: (id: string, payload: { is_active?: boolean; password?: string }) =>
+  createAdmin: (payload: { username: string; password: string; role: Admin['role']; current_password: string }) =>
+    request<Admin>('/admins', { method: 'POST', body: JSON.stringify(payload) }),
+  updateAdmin: (id: string, payload: { is_active?: boolean; password?: string; role?: Admin['role']; current_password: string }) =>
     request<Admin>(`/admins/${encodeURIComponent(id)}`, { method: 'PUT', body: JSON.stringify(payload) }),
+  listSessions: () => request<{ items: AdminSession[] }>('/auth/sessions'),
+  revokeSession: (id: string) => request<{ status: string }>(`/auth/sessions/${encodeURIComponent(id)}`, { method: 'DELETE' }),
 
   exportMigration: (payload: {
     include_mail_logs: boolean

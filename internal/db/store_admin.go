@@ -220,20 +220,24 @@ func (s *Store) CountAdmins(ctx context.Context) (int64, error) {
 }
 
 func (s *Store) CreateAdmin(ctx context.Context, a *Admin) error {
+	if a.Role == "" {
+		a.Role = RoleAdmin
+	}
 	now := time.Now().UTC()
 	if a.CreatedAt.IsZero() {
 		a.CreatedAt = now
 	}
 	a.UpdatedAt = now
 	_, err := s.db.ExecContext(ctx,
-		`INSERT INTO admins(id, username, password_hash, is_active, must_change_password, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?)`,
-		a.ID, a.Username, a.PasswordHash, boolToInt(a.IsActive), boolToInt(a.MustChangePassword), a.CreatedAt, a.UpdatedAt,
+		`INSERT INTO admins(id, username, password_hash, is_active, must_change_password, role, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		a.ID, a.Username, a.PasswordHash, boolToInt(a.IsActive), boolToInt(a.MustChangePassword), a.Role, a.CreatedAt, a.UpdatedAt,
 	)
 	return err
 }
 
 func (s *Store) CreateInitialAdminIfEmpty(ctx context.Context, a *Admin) error {
+	a.Role = RoleAdmin
 	now := time.Now().UTC()
 	if a.CreatedAt.IsZero() {
 		a.CreatedAt = now
@@ -254,9 +258,9 @@ func (s *Store) CreateInitialAdminIfEmpty(ctx context.Context, a *Admin) error {
 		return ErrAlreadyInitialized
 	}
 	if _, err := tx.ExecContext(ctx,
-		`INSERT INTO admins(id, username, password_hash, is_active, must_change_password, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?)`,
-		a.ID, a.Username, a.PasswordHash, boolToInt(a.IsActive), boolToInt(a.MustChangePassword), a.CreatedAt, a.UpdatedAt,
+		`INSERT INTO admins(id, username, password_hash, is_active, must_change_password, role, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		a.ID, a.Username, a.PasswordHash, boolToInt(a.IsActive), boolToInt(a.MustChangePassword), a.Role, a.CreatedAt, a.UpdatedAt,
 	); err != nil {
 		return err
 	}
@@ -265,19 +269,19 @@ func (s *Store) CreateInitialAdminIfEmpty(ctx context.Context, a *Admin) error {
 
 func (s *Store) GetAdminByUsername(ctx context.Context, username string) (*Admin, error) {
 	return scanAdmin(s.db.QueryRowContext(ctx,
-		`SELECT id, username, password_hash, is_active, must_change_password, last_login_at, created_at, updated_at
+		`SELECT id, username, password_hash, is_active, must_change_password, role, last_login_at, created_at, updated_at
 		 FROM admins WHERE username = ?`, username))
 }
 
 func (s *Store) GetAdminByID(ctx context.Context, id string) (*Admin, error) {
 	return scanAdmin(s.db.QueryRowContext(ctx,
-		`SELECT id, username, password_hash, is_active, must_change_password, last_login_at, created_at, updated_at
+		`SELECT id, username, password_hash, is_active, must_change_password, role, last_login_at, created_at, updated_at
 		 FROM admins WHERE id = ?`, id))
 }
 
 func (s *Store) ListAdmins(ctx context.Context) ([]Admin, error) {
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT id, username, password_hash, is_active, must_change_password, last_login_at, created_at, updated_at
+		`SELECT id, username, password_hash, is_active, must_change_password, role, last_login_at, created_at, updated_at
 		 FROM admins ORDER BY created_at ASC`)
 	if err != nil {
 		return nil, err
@@ -353,8 +357,8 @@ func (s *Store) ResetAdminOnStartup(ctx context.Context, out io.Writer) (string,
 		targetID = crypto.NewULID()
 		targetUsername = "admin"
 		if _, err := tx.ExecContext(ctx,
-			`INSERT INTO admins(id, username, password_hash, is_active, must_change_password, created_at, updated_at)
-			 VALUES (?, ?, ?, 1, 1, ?, ?)`,
+			`INSERT INTO admins(id, username, password_hash, is_active, must_change_password, role, created_at, updated_at)
+			 VALUES (?, ?, ?, 1, 1, 'admin', ?, ?)`,
 			targetID, targetUsername, passHash, now, now,
 		); err != nil {
 			return "", "", fmt.Errorf("create temporary admin: %w", err)
@@ -362,12 +366,16 @@ func (s *Store) ResetAdminOnStartup(ctx context.Context, out io.Writer) (string,
 	} else {
 		if _, err := tx.ExecContext(ctx,
 			`UPDATE admins
-			 SET password_hash = ?, is_active = 1, must_change_password = 1, updated_at = ?
+			 SET password_hash = ?, is_active = 1, must_change_password = 1, role = 'admin', updated_at = ?
 			 WHERE id = ?`,
 			passHash, now, targetID,
 		); err != nil {
 			return "", "", fmt.Errorf("reset admin password: %w", err)
 		}
+	}
+
+	if _, err := tx.ExecContext(ctx, `DELETE FROM admin_sessions WHERE admin_id = ?`, targetID); err != nil {
+		return "", "", err
 	}
 
 	if err := tx.Commit(); err != nil {
@@ -541,7 +549,7 @@ func scanAdmin(row rowScanner) (*Admin, error) {
 	var a Admin
 	var isActive, mustChange int
 	var lastLogin sql.NullTime
-	err := row.Scan(&a.ID, &a.Username, &a.PasswordHash, &isActive, &mustChange, &lastLogin, &a.CreatedAt, &a.UpdatedAt)
+	err := row.Scan(&a.ID, &a.Username, &a.PasswordHash, &isActive, &mustChange, &a.Role, &lastLogin, &a.CreatedAt, &a.UpdatedAt)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, ErrNotFound

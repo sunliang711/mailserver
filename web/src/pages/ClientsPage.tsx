@@ -54,7 +54,7 @@ const buildSendCurlCommand = (params: {
   return `curl -X POST ${params.url} \\\n  -H "Content-Type: application/json" \\\n  -d ${shellSingleQuote(payload)}`
 }
 
-export const ClientsPage: React.FC = () => {
+export const ClientsPage: React.FC<{ readOnly?: boolean }> = ({ readOnly = false }) => {
   const toast = useToast()
   const { t, lang } = useI18n()
   const [clients, setClients] = useState<Client[]>([])
@@ -256,10 +256,10 @@ export const ClientsPage: React.FC = () => {
           <h1 className="text-xl font-bold text-slate-900 dark:text-slate-100">{t('clients.title')}</h1>
           <p className="text-sm text-slate-500 dark:text-slate-400">{t('clients.subtitle')}</p>
         </div>
-        <button type="button" onClick={openNew} className="primary-button">
+        {!readOnly && <button type="button" onClick={openNew} className="primary-button">
           <Plus className="w-4 h-4" />
           {t('clients.createBtn')}
-        </button>
+        </button>}
       </div>
 
       <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 overflow-x-auto">
@@ -300,7 +300,7 @@ export const ClientsPage: React.FC = () => {
                 <td className="px-4 py-3 whitespace-nowrap text-slate-500">{formatTime(c.last_used_at, lang)}</td>
                 <td className="px-4 py-3"><StatusBadge value={c.enabled ? 'enabled' : 'disabled'} /></td>
                 <td className="px-4 py-3 text-right whitespace-nowrap">
-                  <div className="inline-flex items-center gap-1.5">
+                  {!readOnly && <div className="inline-flex items-center gap-1.5">
                     <button
                       type="button"
                       onClick={() => openTestSend(c)}
@@ -338,7 +338,7 @@ export const ClientsPage: React.FC = () => {
                     >
                       <Trash2 className="w-3.5 h-3.5" />
                     </button>
-                  </div>
+                  </div>}
                 </td>
               </tr>
             ))}

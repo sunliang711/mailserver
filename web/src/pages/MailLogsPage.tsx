@@ -8,7 +8,7 @@ import { useToast } from '../components/Toast'
 import { useI18n } from '../contexts/I18nContext'
 import type { Client, MailLog } from '../types'
 
-export const MailLogsPage: React.FC = () => {
+export const MailLogsPage: React.FC<{ readOnly?: boolean }> = ({ readOnly = false }) => {
   const toast = useToast()
   const { t, lang } = useI18n()
   const [logs, setLogs] = useState<MailLog[]>([])
@@ -118,10 +118,10 @@ export const MailLogsPage: React.FC = () => {
           >
             <Download className="w-3.5 h-3.5" /> {t('common.exportJSON')}
           </button>
-          <button type="button" onClick={() => setTestOpen(true)} className="primary-button">
+          {!readOnly && <button type="button" onClick={() => setTestOpen(true)} className="primary-button">
             <Send className="w-4 h-4" />
             {t('mailLogs.testSendBtn')}
-          </button>
+          </button>}
         </div>
       </div>
 

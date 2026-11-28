@@ -5,6 +5,7 @@ import { Layout, type NavTab } from './components/Layout'
 import { SessionExpiredModal } from './components/SessionExpiredModal'
 import { ToastProvider } from './components/Toast'
 import { useI18n } from './contexts/I18nContext'
+import { AccountsPage } from './pages/AccountsPage'
 import { AuditPage } from './pages/AuditPage'
 import { AuthPage } from './pages/AuthPages'
 import { ClientsPage } from './pages/ClientsPage'
@@ -27,6 +28,7 @@ function initialTab(): NavTab {
   if (p.startsWith('/cron')) return 'cron'
   if (p.startsWith('/audit')) return 'audit'
   if (p.startsWith('/migration')) return 'migration'
+  if (p.startsWith('/accounts')) return 'accounts'
   if (p.startsWith('/settings')) return 'settings'
   return 'dashboard'
 }
@@ -199,23 +201,26 @@ export function App() {
     )
   }
 
+  const visibleTab = admin.role === 'viewer' && (tab === 'settings' || tab === 'migration') ? 'accounts' : tab
+
   return (
     <ToastProvider>
       <Layout
-        active={tab}
+        active={visibleTab}
         onNavigate={navigate}
         admin={admin}
         version={version}
         resetAdminEnvActive={resetAdminEnvActive}
         onLogout={handleLogout}
       >
-        {tab === 'dashboard' && <DashboardPage onNavigate={navigate} />}
-        {tab === 'mail-logs' && <MailLogsPage />}
-        {tab === 'clients' && <ClientsPage />}
-        {tab === 'cron' && <CronPage />}
-        {tab === 'audit' && <AuditPage />}
-        {tab === 'migration' && <MigrationPage />}
-        {tab === 'settings' && <SettingsPage />}
+        {visibleTab === 'dashboard' && <DashboardPage key={admin.id + admin.role} onNavigate={navigate} readOnly={admin.role !== 'admin'} />}
+        {visibleTab === 'mail-logs' && <MailLogsPage key={admin.id + admin.role} readOnly={admin.role !== 'admin'} />}
+        {visibleTab === 'clients' && <ClientsPage key={admin.id + admin.role} readOnly={admin.role !== 'admin'} />}
+        {visibleTab === 'cron' && <CronPage key={admin.id + admin.role} readOnly={admin.role !== 'admin'} />}
+        {visibleTab === 'audit' && <AuditPage key={admin.id + admin.role} />}
+        {visibleTab === 'migration' && <MigrationPage key={admin.id + admin.role} />}
+        {visibleTab === 'accounts' && <AccountsPage key={admin.id + admin.role} admin={admin} onAdminChange={setAdmin} onSignOut={handleLogout} />}
+        {visibleTab === 'settings' && <SettingsPage key={admin.id + admin.role} />}
       </Layout>
       {sessionExpired && (
         <SessionExpiredModal

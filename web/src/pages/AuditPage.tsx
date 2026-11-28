@@ -30,6 +30,8 @@ const ACTIONS = [
   'admin.change_password',
   'admin.create',
   'admin.update',
+  'auth.logout',
+  'auth.session_revoke',
 ]
 
 export const AuditPage: React.FC = () => {

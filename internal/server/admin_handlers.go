@@ -71,12 +71,12 @@ func (s *AdminServer) handleSetupInit(c *gin.Context) {
 		return
 	}
 
-	tok, err := s.signAdminToken(admin)
+	tok, sess, err := s.accounts.CreateSession(c.Request.Context(), admin, c.ClientIP(), c.Request.UserAgent())
 	if err != nil {
 		writeError(c, http.StatusInternalServerError, "token_error", err.Error())
 		return
 	}
-	s.setAdminCookie(c, tok)
+	s.setAdminCookie(c, tok, sess.ExpiresAt)
 	s.auditLog.Record(c.Request.Context(), audit.Event{
 		ActorType:    "admin",
 		ActorID:      admin.ID,
@@ -88,7 +88,7 @@ func (s *AdminServer) handleSetupInit(c *gin.Context) {
 		UserAgent:    c.Request.UserAgent(),
 	})
 	c.JSON(http.StatusCreated, gin.H{
-		"admin":                  admin,
+		"admin":                  toAccountDTO(admin),
 		"token":                  tok,
 		"reset_admin_env_active": s.cfg.Server.ResetAdmin,
 	})
@@ -119,12 +119,12 @@ func (s *AdminServer) handleAdminLogin(c *gin.Context) {
 	}
 
 	_ = s.store.UpdateAdminLogin(c.Request.Context(), admin.ID)
-	tok, err := s.signAdminToken(admin)
+	tok, sess, err := s.accounts.CreateSession(c.Request.Context(), admin, c.ClientIP(), c.Request.UserAgent())
 	if err != nil {
 		writeError(c, http.StatusInternalServerError, "token_error", err.Error())
 		return
 	}
-	s.setAdminCookie(c, tok)
+	s.setAdminCookie(c, tok, sess.ExpiresAt)
 	s.auditLog.Record(c.Request.Context(), audit.Event{
 		ActorType:    "admin",
 		ActorID:      admin.ID,
@@ -136,13 +136,22 @@ func (s *AdminServer) handleAdminLogin(c *gin.Context) {
 		UserAgent:    c.Request.UserAgent(),
 	})
 	c.JSON(http.StatusOK, gin.H{
-		"admin":                  admin,
+		"admin":                  toAccountDTO(admin),
 		"token":                  tok,
 		"reset_admin_env_active": s.cfg.Server.ResetAdmin,
 	})
 }
 
 func (s *AdminServer) handleAdminLogout(c *gin.Context) {
+	if err := s.accounts.Logout(c.Request.Context(), adminToken(c), c.ClientIP(), c.Request.UserAgent()); err != nil {
+		s.writeAccountError(c, err)
+		return
+	}
+	s.clearAdminCookie(c)
+	c.JSON(http.StatusOK, gin.H{"status": "ok"})
+}
+
+func (s *AdminServer) clearAdminCookie(c *gin.Context) {
 	http.SetCookie(c.Writer, &http.Cookie{
 		Name:     adminCookieName,
 		Value:    "",
@@ -152,68 +161,33 @@ func (s *AdminServer) handleAdminLogout(c *gin.Context) {
 		MaxAge:   -1,
 		SameSite: http.SameSiteLaxMode,
 	})
-	c.JSON(http.StatusOK, gin.H{"status": "ok"})
 }
 
 func (s *AdminServer) handleAdminMe(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
-		"admin":                  currentAdmin(c),
+		"admin":                  toAccountDTO(currentAdmin(c)),
 		"version":                s.version,
 		"reset_admin_env_active": s.cfg.Server.ResetAdmin,
 	})
 }
 
 func (s *AdminServer) handleAdminChangePassword(c *gin.Context) {
-	admin := currentAdmin(c)
 	var req struct {
 		OldPassword string `json:"old_password"`
 		NewPassword string `json:"new_password"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
-		writeError(c, http.StatusBadRequest, "invalid_json", err.Error())
+		writeError(c, http.StatusBadRequest, "invalid_json", "invalid password request")
 		return
 	}
-	if !admin.MustChangePassword || req.OldPassword != "" {
-		if !crypto.VerifyPassword(admin.PasswordHash, req.OldPassword) {
-			writeError(c, http.StatusBadRequest, "invalid_password", "current password is incorrect")
-			return
-		}
-	}
-	if len(req.NewPassword) < 8 {
-		writeError(c, http.StatusBadRequest, "weak_password", "new password must be at least 8 characters")
-		return
-	}
-	if len(req.NewPassword) > 72 {
-		writeError(c, http.StatusBadRequest, "weak_password", "new password must not exceed 72 characters")
-		return
-	}
-	hash, err := crypto.HashPassword(req.NewPassword)
+	result, err := s.accounts.ChangePassword(c.Request.Context(), accountActor(c), req.OldPassword, req.NewPassword)
 	if err != nil {
-		writeError(c, http.StatusInternalServerError, "hash_error", err.Error())
+		s.writeAccountError(c, err)
 		return
 	}
-	if err := s.store.UpdateAdminPassword(c.Request.Context(), admin.ID, hash); err != nil {
-		writeError(c, http.StatusInternalServerError, "update_failed", err.Error())
-		return
-	}
-	admin.PasswordHash = hash
-	admin.MustChangePassword = false
-	if tok, err := s.signAdminToken(admin); err == nil {
-		s.setAdminCookie(c, tok)
-	}
-	s.auditLog.Record(c.Request.Context(), audit.Event{
-		ActorType:    "admin",
-		ActorID:      admin.ID,
-		ActorName:    admin.Username,
-		Action:       "admin.change_password",
-		ResourceType: "admin",
-		ResourceID:   admin.ID,
-		IPAddress:    c.ClientIP(),
-		UserAgent:    c.Request.UserAgent(),
-	})
+	s.setAdminCookie(c, result.Token, result.ExpiresAt)
 	c.JSON(http.StatusOK, gin.H{
-		"status":                 "ok",
-		"admin":                  admin,
+		"status": "ok", "admin": toAccountDTO(result.Admin),
 		"reset_admin_env_active": s.cfg.Server.ResetAdmin,
 	})
 }
@@ -222,7 +196,7 @@ func isHTTPS(r *http.Request) bool {
 	return r.TLS != nil || strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https")
 }
 
-func (s *AdminServer) setAdminCookie(c *gin.Context, token string) {
+func (s *AdminServer) setAdminCookie(c *gin.Context, token string, expiresAt time.Time) {
 	http.SetCookie(c.Writer, &http.Cookie{
 		Name:     adminCookieName,
 		Value:    token,
@@ -230,7 +204,8 @@ func (s *AdminServer) setAdminCookie(c *gin.Context, token string) {
 		HttpOnly: true,
 		Secure:   isHTTPS(c.Request),
 		SameSite: http.SameSiteLaxMode,
-		MaxAge:   86400,
+		MaxAge:   max(1, int(time.Until(expiresAt).Seconds())),
+		Expires:  expiresAt,
 	})
 }
 
@@ -1130,123 +1105,6 @@ func (s *AdminServer) handleTestSMTPSettings(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"status": "ok", "host": cfg.Host, "port": cfg.Port})
-}
-
-func (s *AdminServer) handleListAdmins(c *gin.Context) {
-	admins, err := s.store.ListAdmins(c.Request.Context())
-	if err != nil {
-		writeError(c, http.StatusInternalServerError, "list_failed", err.Error())
-		return
-	}
-	c.JSON(http.StatusOK, gin.H{"items": admins})
-}
-
-func (s *AdminServer) handleCreateAdmin(c *gin.Context) {
-	actor := currentAdmin(c)
-	var req struct {
-		Username string `json:"username"`
-		Password string `json:"password"`
-	}
-	if err := c.ShouldBindJSON(&req); err != nil {
-		writeError(c, http.StatusBadRequest, "invalid_json", err.Error())
-		return
-	}
-	req.Username = strings.TrimSpace(req.Username)
-	if len(req.Username) < 3 || len(req.Password) < 8 {
-		writeError(c, http.StatusBadRequest, "validation_error", "username >= 3 chars and password >= 8 chars required")
-		return
-	}
-	hash, err := crypto.HashPassword(req.Password)
-	if err != nil {
-		writeError(c, http.StatusInternalServerError, "hash_error", err.Error())
-		return
-	}
-	a := &db.Admin{
-		ID:           crypto.NewULID(),
-		Username:     req.Username,
-		PasswordHash: hash,
-		IsActive:     true,
-	}
-	if err := s.store.CreateAdmin(c.Request.Context(), a); err != nil {
-		writeError(c, http.StatusBadRequest, "create_failed", err.Error())
-		return
-	}
-	s.auditLog.Record(c.Request.Context(), audit.Event{
-		ActorType:    "admin",
-		ActorID:      actor.ID,
-		ActorName:    actor.Username,
-		Action:       "admin.create",
-		ResourceType: "admin",
-		ResourceID:   a.ID,
-		IPAddress:    c.ClientIP(),
-		Detail:       map[string]any{"username": a.Username},
-	})
-	c.JSON(http.StatusCreated, a)
-}
-
-func (s *AdminServer) handleUpdateAdmin(c *gin.Context) {
-	actor := currentAdmin(c)
-	id := c.Param("id")
-	var req struct {
-		IsActive *bool   `json:"is_active"`
-		Password *string `json:"password"`
-	}
-	if err := c.ShouldBindJSON(&req); err != nil {
-		writeError(c, http.StatusBadRequest, "invalid_json", err.Error())
-		return
-	}
-	if req.IsActive != nil {
-		if id == actor.ID && !*req.IsActive {
-			writeError(c, http.StatusBadRequest, "cannot_disable_self", "cannot disable your own admin account")
-			return
-		}
-		if err := s.store.UpdateAdminActive(c.Request.Context(), id, *req.IsActive); err != nil {
-			if errors.Is(err, db.ErrNotFound) {
-				writeError(c, http.StatusNotFound, "not_found", "admin not found")
-				return
-			}
-			writeError(c, http.StatusInternalServerError, "update_failed", err.Error())
-			return
-		}
-	}
-	if req.Password != nil && *req.Password != "" {
-		if len(*req.Password) < 8 {
-			writeError(c, http.StatusBadRequest, "weak_password", "password must be at least 8 characters")
-			return
-		}
-		hash, err := crypto.HashPassword(*req.Password)
-		if err != nil {
-			writeError(c, http.StatusInternalServerError, "hash_error", err.Error())
-			return
-		}
-		if err := s.store.UpdateAdminPassword(c.Request.Context(), id, hash); err != nil {
-			if errors.Is(err, db.ErrNotFound) {
-				writeError(c, http.StatusNotFound, "not_found", "admin not found")
-				return
-			}
-			writeError(c, http.StatusInternalServerError, "update_failed", err.Error())
-			return
-		}
-	}
-	a, err := s.store.GetAdminByID(c.Request.Context(), id)
-	if err != nil {
-		if errors.Is(err, db.ErrNotFound) {
-			writeError(c, http.StatusNotFound, "not_found", "admin not found")
-			return
-		}
-		writeError(c, http.StatusInternalServerError, "get_failed", err.Error())
-		return
-	}
-	s.auditLog.Record(c.Request.Context(), audit.Event{
-		ActorType:    "admin",
-		ActorID:      actor.ID,
-		ActorName:    actor.Username,
-		Action:       "admin.update",
-		ResourceType: "admin",
-		ResourceID:   id,
-		IPAddress:    c.ClientIP(),
-	})
-	c.JSON(http.StatusOK, a)
 }
 
 // --- Migration Export & Import ---

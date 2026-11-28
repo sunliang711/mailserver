@@ -5,6 +5,7 @@ import "time"
 type Admin struct {
 	ID                 string     `json:"id"`
 	Username           string     `json:"username"`
+	Role               string     `json:"role"`
 	PasswordHash       string     `json:"-"`
 	IsActive           bool       `json:"is_active"`
 	MustChangePassword bool       `json:"must_change_password"`

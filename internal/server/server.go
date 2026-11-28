@@ -2,9 +2,7 @@ package server
 
 import (
 	"context"
-	"crypto/sha256"
 	"crypto/tls"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -15,10 +13,8 @@ import (
 	"net/url"
 	"os"
 	"strings"
-	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/golang-jwt/jwt/v5"
 	"github.com/rs/zerolog"
 	"github.com/sunliang711/mailserver/internal/audit"
 	"github.com/sunliang711/mailserver/internal/config"
@@ -36,13 +32,14 @@ import (
 const (
 	adminCookieName = "mailserver_admin_token"
 	ctxAdminKey     = "mailserver_admin"
+	ctxPrincipalKey = "mailserver_principal"
 )
 
 type AdminServer struct {
 	cfg         *config.Config
 	store       *db.Store
 	cipher      *crypto.Cipher
-	jwtSecret   []byte
+	accounts    *service.AccountService
 	factory     *email.Factory
 	mailService *service.MailService
 	sched       *scheduler.Engine
@@ -67,7 +64,7 @@ func NewAdminServer(
 		cfg:         cfg,
 		store:       store,
 		cipher:      cipher,
-		jwtSecret:   cipher.DeriveSubKey("admin-jwt-signing"),
+		accounts:    service.NewAccountService(store),
 		factory:     factory,
 		mailService: mailService,
 		sched:       sched,
@@ -117,10 +114,12 @@ func RegisterRoutes(engine *gin.Engine, mailHandler *handler.MailHandler, s *Adm
 		{
 			sessionAuthed.GET("/auth/me", s.handleAdminMe)
 			sessionAuthed.PUT("/auth/password", s.handleAdminChangePassword)
+			sessionAuthed.GET("/auth/sessions", s.handleListSessions)
+			sessionAuthed.DELETE("/auth/sessions/:id", s.handleRevokeSession)
 		}
 
 		authed := admin.Group("")
-		authed.Use(s.adminAuthMiddleware(false))
+		authed.Use(s.adminAuthMiddleware(false), s.consolePermissions())
 		{
 			authed.GET("/dashboard/summary", s.handleDashboardSummary)
 
@@ -319,74 +318,65 @@ func (s *AdminServer) corsMiddleware() gin.HandlerFunc {
 	}
 }
 
+func adminToken(c *gin.Context) string {
+	if token, err := c.Cookie(adminCookieName); err == nil && token != "" {
+		return token
+	}
+	if auth := c.GetHeader("Authorization"); strings.HasPrefix(strings.ToLower(auth), "bearer ") {
+		return strings.TrimSpace(auth[7:])
+	}
+	return ""
+}
+
 func (s *AdminServer) adminAuthMiddleware(allowMustChange bool) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		var tokStr string
-		if ck, err := c.Cookie(adminCookieName); err == nil {
-			tokStr = ck
-		}
-		if tokStr == "" {
-			if auth := c.GetHeader("Authorization"); strings.HasPrefix(strings.ToLower(auth), "bearer ") {
-				tokStr = strings.TrimSpace(auth[7:])
-			}
-		}
-		if tokStr == "" {
-			writeError(c, http.StatusUnauthorized, "unauthorized", "admin login required")
+		p, err := s.accounts.Authenticate(c.Request.Context(), adminToken(c))
+		if err != nil {
+			s.writeAccountError(c, err)
 			c.Abort()
 			return
 		}
-
-		claims := jwt.MapClaims{}
-		tok, err := jwt.ParseWithClaims(tokStr, claims, func(token *jwt.Token) (any, error) {
-			if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
-				return nil, errors.New("unexpected signing method")
-			}
-			return s.jwtSecret, nil
-		})
-		if err != nil || !tok.Valid {
-			writeError(c, http.StatusUnauthorized, "invalid_token", "session expired or invalid")
-			c.Abort()
-			return
-		}
-		adminID, _ := claims["sub"].(string)
-		admin, err := s.store.GetAdminByID(c.Request.Context(), adminID)
-		if err != nil || !admin.IsActive {
-			writeError(c, http.StatusUnauthorized, "unauthorized", "admin account not active")
-			c.Abort()
-			return
-		}
-		pwdV, _ := claims["pwd_v"].(string)
-		if pwdV != passwordVersion(admin.PasswordHash) {
-			writeError(c, http.StatusUnauthorized, "session_revoked", "session revoked due to credential change")
-			c.Abort()
-			return
-		}
-		if !allowMustChange && admin.MustChangePassword {
+		if !allowMustChange && p.Admin.MustChangePassword {
 			writeError(c, http.StatusForbidden, "password_change_required", "admin password change required before accessing management console")
 			c.Abort()
 			return
 		}
-		c.Set(ctxAdminKey, admin)
+		c.Set(ctxAdminKey, p.Admin)
+		c.Set(ctxPrincipalKey, p)
 		c.Next()
 	}
 }
 
-func passwordVersion(hash string) string {
-	sum := sha256.Sum256([]byte(hash))
-	return hex.EncodeToString(sum[:8])
+func (s *AdminServer) consolePermissions() gin.HandlerFunc {
+	// 只读账号按明确的路由白名单放行，密钥、SMTP 配置与迁移入口只对管理员开放。
+	readRoutes := map[string]bool{
+		"/admin/api/v1/dashboard/summary":  true,
+		"/admin/api/v1/mail-logs":          true,
+		"/admin/api/v1/mail-logs/export":   true,
+		"/admin/api/v1/mail-logs/:id":      true,
+		"/admin/api/v1/clients":            true,
+		"/admin/api/v1/cron-jobs":          true,
+		"/admin/api/v1/cron-jobs/:id/runs": true,
+		"/admin/api/v1/audit-logs":         true,
+		"/admin/api/v1/audit-logs/export":  true,
+	}
+	return func(c *gin.Context) {
+		if currentAdmin(c).Role == db.RoleAdmin || c.Request.Method == http.MethodGet && readRoutes[c.FullPath()] {
+			c.Next()
+			return
+		}
+		writeError(c, http.StatusForbidden, "forbidden", "administrator permission required")
+		c.Abort()
+	}
 }
 
-func (s *AdminServer) signAdminToken(admin *db.Admin) (string, error) {
-	now := time.Now().UTC()
-	claims := jwt.MapClaims{
-		"sub":      admin.ID,
-		"username": admin.Username,
-		"pwd_v":    passwordVersion(admin.PasswordHash),
-		"iat":      now.Unix(),
-		"exp":      now.Add(24 * time.Hour).Unix(),
-	}
-	tok := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	return tok.SignedString(s.jwtSecret)
+func currentPrincipal(c *gin.Context) *service.Principal {
+	p, _ := c.MustGet(ctxPrincipalKey).(*service.Principal)
+	return p
+}
+
+func accountActor(c *gin.Context) service.AccountActor {
+	return service.AccountActor{Principal: currentPrincipal(c), IP: c.ClientIP(), UserAgent: c.Request.UserAgent()}
 }
 
 func currentAdmin(c *gin.Context) *db.Admin {

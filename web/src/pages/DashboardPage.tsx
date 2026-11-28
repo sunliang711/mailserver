@@ -7,7 +7,7 @@ import type { NavTab } from '../components/Layout'
 import { useI18n } from '../contexts/I18nContext'
 import type { DashboardSummary } from '../types'
 
-export const DashboardPage: React.FC<{ onNavigate: (tab: NavTab) => void }> = ({ onNavigate }) => {
+export const DashboardPage: React.FC<{ onNavigate: (tab: NavTab) => void; readOnly?: boolean }> = ({ onNavigate, readOnly = false }) => {
   const { t, lang } = useI18n()
   const [data, setData] = useState<DashboardSummary | null>(null)
   const [loading, setLoading] = useState(true)
@@ -111,11 +111,11 @@ export const DashboardPage: React.FC<{ onNavigate: (tab: NavTab) => void }> = ({
             </p>
           </div>
         </div>
-        <button className="primary-button" onClick={() => onNavigate(data.smtp_configured ? 'mail-logs' : 'settings')}>
+        {(!readOnly || data.smtp_configured) && <button className="primary-button" onClick={() => onNavigate(data.smtp_configured ? 'mail-logs' : 'settings')}>
           {data.smtp_configured ? <Send className="w-4 h-4" /> : <Settings className="w-4 h-4" />}
           {data.smtp_configured ? t('dashboard.hero.btnReady') : t('dashboard.hero.btnEmpty')}
           <ArrowRight className="w-3.5 h-3.5" />
-        </button>
+        </button>}
       </div>
 
       <div className="grid grid-cols-1 min-[380px]:grid-cols-2 lg:grid-cols-4 gap-4">

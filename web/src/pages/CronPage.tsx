@@ -140,7 +140,7 @@ const Switch: React.FC<{
   </button>
 )
 
-export const CronPage: React.FC = () => {
+export const CronPage: React.FC<{ readOnly?: boolean }> = ({ readOnly = false }) => {
   const toast = useToast()
   const { t, lang } = useI18n()
   const [loading, setLoading] = useState(true)
@@ -524,14 +524,14 @@ export const CronPage: React.FC = () => {
                   </td>
                   <td className="px-4 py-3.5 align-top">
                     <div className="pt-0.5">
-                      <Switch checked={j.enabled} disabled={togglingId === j.id} label={t('cron.toggleAria', { name: displayName })} onChange={(next) => handleToggle(j, next)} />
+                      <Switch checked={j.enabled} disabled={readOnly || togglingId === j.id} label={t('cron.toggleAria', { name: displayName })} onChange={(next) => handleToggle(j, next)} />
                     </div>
                   </td>
                   <td className="px-4 py-3.5 align-top text-right whitespace-nowrap">
                     <div className="inline-flex items-center gap-1.5">
                       <button
                         type="button"
-                        disabled={Boolean(runningId)}
+                        disabled={readOnly || Boolean(runningId)}
                         onClick={() => handleRunNow(j)}
                         className="px-2.5 py-1 text-xs rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 disabled:opacity-45 inline-flex items-center gap-1"
                       >
@@ -540,6 +540,7 @@ export const CronPage: React.FC = () => {
                       </button>
                       <button
                         type="button"
+                        disabled={readOnly}
                         onClick={() => openEdit(j)}
                         className="px-2.5 py-1 text-xs rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700"
                       >
